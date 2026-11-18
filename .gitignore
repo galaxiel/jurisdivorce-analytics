@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Base de données locale (seed / pipeline)
+backend/jurisprudence.db
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Config locale & OS
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
