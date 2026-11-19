@@ -81,6 +81,27 @@ python -m pipeline.ingest control pause|resume|stop
 Variables : `MAX_CONCURRENCY` (défaut 25, montez à 50 pour saturer le quota),
 `MAX_CHARS` (défaut 48000 — troncature intelligente : en-tête + motifs financiers +
 dispositif), `JURILIBRE_OPENDATA_URL`, `JURISDIVORCE_MODEL` (défaut `glm-4-flash`).
+Flags équivalents : `--concurrency 50 --max-chars 16000`.
+
+### ⚡ Débit : la vraie contrainte est l'enveloppe de tokens, pas la concurrence
+
+| Réglage | Tokens/décision (approx.) | Décisions/jour sur 300 M |
+|---|---|---|
+| `MAX_CHARS=48000` (qualité max) | ~14 k entrée + 2,5 k sortie ≈ **16,5 k** | **~18 000** |
+| `MAX_CHARS=16000` (équilibré) | ~4,7 k + 2,5 k ≈ **7 k** | **~42 000** |
+| `MAX_CHARS=12000` (débit max) | ~3,5 k + 2,5 k ≈ **6 k** | **~50 000** |
+
+- **Concurrence** : démarrez `--concurrency 50`. Le limiteur **adaptatif** divise la
+  concurrence par 2 à chaque 429 (50 → 25 → 12…), retente chaque décision en backoff
+  exponentiel, puis remonte de +10 % toutes les 90 s sans erreur — le pipeline s'auto-règle
+  à la limite réelle de Zhipu sans intervention.
+- **50 000–100 000 décisions/jour** n'est atteignable que si le budget de troncature suit :
+  à `MAX_CHARS=12000`, chaque décision coûte ~6 k tokens et la vitesse réseau/GLM (≈2-4
+  décisions/s à 30-50 requêtes simultanées) laisse l'enveloppe 300 M comme seul plafond.
+- Sources réelles (vérifiées en ligne le 2026-11-19) : `/OPENDATA/CAPP/Freemium_capp_global_…tar.gz`
+  (**292 Mo, XML DILA `TEXTE_JURI_JUDI` — 85 % des décisions chiffrées de liquidation-partage**)
+  et `/OPENDATA/CASS/Freemium_cass_global_…tar.gz`. L'extracteur XML + JSON est intégré ;
+  les nouveaux dumps du jour sont repris automatiquement au prochain lancement (manifest).
 
 Ce que fait la campagne :
 

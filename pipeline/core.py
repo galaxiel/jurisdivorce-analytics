@@ -1,13 +1,17 @@
 """Fondations du pipeline d'ingestion v2 : filtre normalisé, troncature intelligente,
-réparation JSON, schéma SQL enrichi et heartbeat temps réel du moniteur.
+réparation JSON, extraction XML DILA (TEXTE_JURI_JUDI), concurrence adaptative 429
+et heartbeat temps réel du moniteur.
 
 Le script historique `ingest_judilibre_brut.py` reste fonctionnel en autonome ;
 ce module en est l'évolution partagée par `pipeline/ingest.py`.
 """
+import asyncio
 import json
 import re
 import sqlite3
+import time
 import unicodedata
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -258,6 +262,47 @@ def extract_id(data: Any, fallback: str) -> str:
     return fallback
 
 
+# ---------------------------------------------------------------------------
+# EXTRACTION XML DILA (fonds freemium CAPP / CASS / TJ : TEXTE_JURI_JUDI)
+# ---------------------------------------------------------------------------
+def parse_juri_xml(data: bytes) -> Optional[Dict[str, str]]:
+    """Extrait id/juridiction/date/numéro/texte d'un fichier XML DILA.
+
+    Structure : TEXTE_JURI_JUDI > META > META_COMMUN/ID + META_SPEC/META_JURI
+    (JURIDICTION, DATE_DEC) + META_JURI_JUDI/NUMEROS_AFFAIRES + TEXTE (paragraphes).
+    """
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    texte_el = root.find("TEXTE") or root.find("BLOCTEXTUEL")
+    if texte_el is None:
+        return None
+    paragraphs = [
+        "".join(el.itertext()).strip()
+        for el in texte_el.iter()
+        if len(el) == 0 and (el.text or "").strip()
+    ]
+    body = "\n".join(paragraphs)
+    if len(body) < MIN_CHARS:
+        return None
+
+    juridiction = (root.findtext(".//META_SPEC/META_JURI/JURIDICTION") or "").strip()
+    date_dec = (root.findtext(".//META_SPEC/META_JURI/DATE_DEC")
+                or root.findtext(".//META_COMMUN/DATE_TEXTE") or "").strip()
+    numero = (root.findtext(".//NUMERO_AFFAIRE") or "").strip()
+    decision_id = (root.findtext(".//META_COMMUN/ID") or "").strip()
+    nature = (root.findtext(".//META_COMMUN/NATURE") or "ARRET").strip()
+
+    # En-tête : indispensable au LLM pour extraire metadata.juridiction / date_decision
+    header_bits = [juridiction.upper(), f"{nature} DU {date_dec}"]
+    if numero:
+        header_bits.append(f"N° RG {numero}")
+    header = " — ".join(b for b in header_bits if b)
+    text = f"{header}\n\n{body}"
+    return {"id": decision_id, "text": text}
+
+
 def _num(v: Any) -> Optional[float]:
     if v is None or isinstance(v, dict) or isinstance(v, list):
         return None
@@ -451,3 +496,48 @@ class PipelineStateWriter:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+
+# ---------------------------------------------------------------------------
+# CONCURRENCE ADAPTATIVE — sature le quota sans se faire bannir par les 429
+# ---------------------------------------------------------------------------
+class AdaptiveLimiter:
+    """Limiteur concurrent dynamique : part de MAX_CONCURRENCY, se réduit de moitié
+    à chaque 429 (rate limit Zhipu) puis remonte progressivement sans nouvelle 429.
+
+    Usage : limiter = AdaptiveLimiter(50) ; await limiter.acquire() … await limiter.release().
+    """
+
+    def __init__(self, max_size: int):
+        self.max_size = max(1, max_size)
+        self.size = self.max_size
+        self.active = 0
+        self._cv = asyncio.Condition()
+        self._paused_until = 0.0
+        self._recover_delay = 60.0
+
+    async def acquire(self) -> None:
+        async with self._cv:
+            while self.active >= self.size:
+                await self._cv.wait()
+            self.active += 1
+
+    async def release(self) -> None:
+        async with self._cv:
+            self.active = max(0, self.active - 1)
+            self._cv.notify()
+
+    def on_rate_limited(self) -> int:
+        """429 reçu : réduit la concurrence et impose un temps de récupération."""
+        self.size = max(2, self.size // 2)
+        self._paused_until = time.monotonic() + self._recover_delay
+        return self.size
+
+    async def grow_loop(self) -> None:
+        """Remonte progressivement vers MAX_CONCURRENCY quand plus de 429."""
+        while True:
+            await asyncio.sleep(self._recover_delay)
+            async with self._cv:
+                if time.monotonic() > self._paused_until and self.size < self.max_size:
+                    self.size = min(self.max_size, self.size + max(1, self.max_size // 10))
+                    self._cv.notify_all()

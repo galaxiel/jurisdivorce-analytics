@@ -1,11 +1,13 @@
 """Aspirateur multi-fonds Open Data DILA / Judilibre : CAPP, CASS, TJ (et autres).
 
 Étape 1.1 du cahier des charges : parcourt récursivement l'index HTML public de
-`echanges.dila.gouv.fr` (répertoires par fonds/mois → archives `.tar.gz` / `.zip`),
-découvre TOUTES les archives historiques — pas seulement le dernier mois — et
-télécharge en flux vers `archives/` (dossier dédié aux données non fiables,
-jamais dans le code).
+`echanges.dila.gouv.fr/OPENDATA/` (dossiers fonds : `CAPP/`, `CASS/`, `TJ/` →
+archives `.tar.gz` / `.zip`), découvre TOUTES les archives — dont le dump global
+du Cours d'appel — et télécharge en flux vers `archives/` (dossier dédié aux
+données non fiables, jamais dans le code).
 
+Structure réelle vérifiée en ligne :
+  /OPENDATA/CAPP/Freemium_capp_global_YYYYMMDD-HHMMSS.tar.gz (~292 Mo, XML JURI)
 L'URL de base est configurable : `JUDILIBRE_OPENDATA_URL`.
 """
 import asyncio
@@ -19,14 +21,21 @@ import httpx
 HREF_RE = re.compile(r'href="([^"?#]+)"', re.IGNORECASE)
 ARCHIVE_RE = re.compile(r"\.(tar\.gz|tgz|zip)$", re.IGNORECASE)
 KNOWN_FONDS = ("CAPP", "CASS", "TJ", "TGE", "TC", "TGO", "CPH", "TOM")
+DEFAULT_OPENDATA_URL = "https://echanges.dila.gouv.fr/OPENDATA/"
 
 
 def fonds_from_path(url: str) -> str:
-    for segment in unquote(url).split("/"):
+    """Fonds = segment de chemin (CAPP/…) ou nom du fichier (…_capp_global_…)."""
+    path = unquote(url)
+    for segment in path.split("/"):
         upper = segment.upper()
         for fonds in KNOWN_FONDS:
             if upper == fonds or upper.startswith(fonds + "_"):
                 return fonds
+    basename = path.split("/")[-1].split("?")[0]
+    for fonds in KNOWN_FONDS:
+        if fonds.lower() in basename.lower():
+            return fonds
     return "AUTRE"
 
 
@@ -34,7 +43,11 @@ async def list_archives(client: httpx.AsyncClient, base_url: str,
                         fonds_filter: Optional[List[str]] = None,
                         max_archives: Optional[int] = None,
                         max_depth: int = 4, log=print) -> List[Dict[str, str]]:
-    """Parcours BFS de l'index de fichiers publics ; retourne {url, fonds}."""
+    """Parcours BFS de l'index de fichiers publics ; retourne {url, fonds}.
+
+    Avec un filtre de fonds, on n'explore que les répertoires dont le chemin
+    contient un fonds cible — évite de crawler les dossiers LEGI/LODECIM etc.
+    """
     found: Dict[str, Dict[str, str]] = {}
     seen_dirs: set = set()
     queue: List[Tuple[str, int]] = [(base_url, 0)]
@@ -53,6 +66,10 @@ async def list_archives(client: httpx.AsyncClient, base_url: str,
         for href in HREF_RE.findall(response.text):
             link = urljoin(url, href)
             if link.endswith("/"):
+                if fonds_filter and not any(
+                    f.lower() in unquote(link).lower() for f in fonds_filter
+                ):
+                    continue  # répertoire hors fonds cibles
                 queue.append((link, depth + 1))
             elif ARCHIVE_RE.search(link):
                 fonds = fonds_from_path(link)

@@ -33,19 +33,22 @@ import zipfile
 from typing import Iterable, List, Optional, Tuple
 
 import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .core import (
+    AdaptiveLimiter,
     PipelineStateWriter,
     connect_db,
     decision_filter,
     extract_id,
     extract_text,
+    parse_juri_xml,
     repair_json,
     save_decision,
     smart_truncate,
 )
+from .dila import DEFAULT_OPENDATA_URL
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -55,10 +58,7 @@ ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/
 MODEL = os.getenv("JURISDIVORCE_MODEL", "glm-4-flash")
 MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "25"))
 MAX_CHARS = int(os.getenv("MAX_CHARS", "48000"))
-OPENDATA_BASE_URL = os.getenv(
-    "JUDILIBRE_OPENDATA_URL",
-    "https://echanges.dila.gouv.fr/OPENDATA/Judilibre/",
-)
+OPENDATA_BASE_URL = os.getenv("JUDILIBRE_OPENDATA_URL", DEFAULT_OPENDATA_URL)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB = os.path.join(REPO_ROOT, "backend", "jurisprudence.db")
 ARCHIVES_DIR = os.path.join(REPO_ROOT, "archives")  # données non fiables : jamais dans le code
@@ -114,22 +114,17 @@ def _json_payloads(content: bytes) -> Iterable[dict]:
 
 
 def iter_decisions_from_archive(path: str) -> Iterable[Tuple[str, str]]:
+    """Archive .tar.gz / .zip / .json contenant du JSON ou du XML DILA (TEXTE_JURI_JUDI)."""
     if path.endswith(".zip"):
         with zipfile.ZipFile(path) as archive:
             for member in archive.namelist():
                 if member.endswith("/"):
                     continue
-                for payload in _json_payloads(archive.read(member)):
-                    text = extract_text(payload)
-                    if text:
-                        yield extract_id(payload, member), text
+                yield from _decisions_from_member(archive.read(member), member)
         return
     if path.endswith(".json"):
         with open(path, "rb") as file:
-            for payload in _json_payloads(file.read()):
-                text = extract_text(payload)
-                if text:
-                    yield extract_id(payload, os.path.basename(path)), text
+            yield from _decisions_from_member(file.read(), os.path.basename(path))
         return
     with tarfile.open(path, "r:*") as archive:
         for member in archive.getmembers():
@@ -138,10 +133,21 @@ def iter_decisions_from_archive(path: str) -> Iterable[Tuple[str, str]]:
             file = archive.extractfile(member)
             if file is None:
                 continue
-            for payload in _json_payloads(file.read()):
-                text = extract_text(payload)
-                if text:
-                    yield extract_id(payload, member.name), text
+            yield from _decisions_from_member(file.read(), member.name)
+
+
+def _decisions_from_member(content: bytes, name: str) -> Iterable[Tuple[str, str]]:
+    """Un membre d'archive = XML DILA (fonds freemium CAPP/CASS/TJ) ou JSON."""
+    stripped = content.lstrip()
+    if stripped.startswith(b"<?xml") or stripped.startswith(b"<TEXTE"):
+        parsed = parse_juri_xml(content)
+        if parsed:
+            yield parsed["id"], parsed["text"]
+        return
+    for payload in _json_payloads(content):
+        text = extract_text(payload)
+        if text:
+            yield extract_id(payload, name), text
 
 
 # ---------------------------------------------------------------------------
@@ -178,16 +184,22 @@ async def wait_if_paused(state: PipelineStateWriter) -> bool:
         return status != "stopped"
 
 
-async def analyze_decision(conn, state: PipelineStateWriter, decision_id: str, text: str, md5: str) -> bool:
+async def analyze_decision(conn, state: PipelineStateWriter, limiter: AdaptiveLimiter,
+                           decision_id: str, text: str, md5: str, max_chars: int) -> bool:
     if not await wait_if_paused(state):
         state.log("WARN", f"Arrêt demandé : {decision_id} abandonnée.")
         return False
-    truncated = smart_truncate(text, MAX_CHARS)
+    truncated = smart_truncate(text, max_chars)
     try:
         extracted, tokens = await call_llm(truncated)
         save_decision(conn, decision_id, md5, truncated, extracted)
         state.bump(decisions_analyzed=1, tokens_today=tokens)
         return True
+    except RateLimitError:
+        # 429 : on réduit la concurrence de moitié ; tenacity retentera la décision.
+        new_size = limiter.on_rate_limited()
+        state.log("WARN", f"429 reçu de Zhipu : concurrence réduite à {new_size} requêtes simultanées.")
+        raise  # laissé à tenacity (backoff exponentiel)
     except Exception as exc:
         state.bump(decisions_failed=1)
         state.log("ERROR", f"Échec GLM {decision_id} : {exc}")
@@ -240,12 +252,17 @@ async def run_campaign(args) -> None:
                archives_total=len(pending))
     print(f"{len(pending)} archive(s) à traiter ({len(archives) - len(pending)} déjà en manifest).")
 
-    # 2) Parcours des archives → filtre → file de travail
-    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+    # 2) Parcours des archives → filtre → file de travail (concurrence adaptative 429)
+    limiter = AdaptiveLimiter(args.concurrency or MAX_CONCURRENCY)
+    max_chars = args.max_chars or MAX_CHARS
+    grow_task = asyncio.create_task(limiter.grow_loop())
 
     async def bounded(decision_id: str, text: str, md5: str) -> bool:
-        async with semaphore:
-            return await analyze_decision(conn, state, decision_id, text, md5)
+        await limiter.acquire()
+        try:
+            return await analyze_decision(conn, state, limiter, decision_id, text, md5, max_chars)
+        finally:
+            await limiter.release()
 
     total_analyzed = 0
     try:
@@ -301,6 +318,7 @@ async def run_campaign(args) -> None:
             if not args.keep_archives and not args.local and os.path.exists(path):
                 os.remove(path)  # économise le disque une fois l'archive traitée
     finally:
+        grow_task.cancel()
         final = state.control_status()
         state.heartbeat(status="idle" if final != "stopped" else "stopped", queue_size=0)
         state.log("INFO", f"Campagne terminée : {total_analyzed} décisions analysées au total.")
@@ -348,6 +366,10 @@ def main() -> None:
     run_p.add_argument("--local", nargs="+", metavar="CHEMIN", help="Archives/fichiers locaux (tar.gz, zip, json, glob)")
     run_p.add_argument("--analyze", action="store_true", help="Envoyer les décisions au LLM (sinon comptage seul)")
     run_p.add_argument("--dry-run", action="store_true", help="Comptage uniquement : 0 token, 0 écriture LLM")
+    run_p.add_argument("--concurrency", type=int, default=None,
+                       help=f"Requêtes simultanées GLM (défaut MAX_CONCURRENCY={MAX_CONCURRENCY} ; 30-50 si aucune 429)")
+    run_p.add_argument("--max-chars", type=int, default=None,
+                       help=f"Budget de troncature par décision (défaut {MAX_CHARS} ; ~16000 pour viser 40-50k décisions/jour)")
     run_p.add_argument("--max-archives", type=int, default=None, help="Limiter le nombre d'archives (test)")
     run_p.add_argument("--force", action="store_true", help="Retraiter les archives déjà 'done'")
     run_p.add_argument("--keep-archives", action="store_true", help="Conserver les archives téléchargées sur disque")
