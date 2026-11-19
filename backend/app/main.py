@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from .database import DB_PATH, Base, ensure_pipeline_tables, ensure_schema, engine, get_db
 from .models import Decision  # noqa: F401 — importé pour create_all
-from .routers import boussole, calculateur, decisions, demo, pipeline, stats
+from .routers import boussole, calculateur, decisions, demo, pipeline, simulateur, stats
 
 Base.metadata.create_all(bind=engine)
 ensure_schema()  # migration légère : colonnes v2 ajoutées sans perte de données
@@ -41,6 +41,7 @@ app.include_router(boussole.router)
 app.include_router(pipeline.router)
 app.include_router(calculateur.router)
 app.include_router(demo.router)
+app.include_router(simulateur.router)
 
 
 @app.get("/api/health", tags=["health"])

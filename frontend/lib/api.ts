@@ -26,6 +26,8 @@ import type {
   PreuveSucces,
   RecompenseCalcResult,
   TendancePoint,
+  PensionStats,
+  DemandesAnnexesStats,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -276,8 +278,20 @@ export function usePieges() {
   return useApi<Piege[]>("/api/stats/pieges");
 }
 
+export function usePension() {
+  return useApi<PensionStats>("/api/stats/pension");
+}
+
+export function useDemandesAnnexes() {
+  return useApi<DemandesAnnexesStats>("/api/stats/demandes-annexes");
+}
+
 export function useHealth() {
   return usePolling<HealthStatus>("/api/health", 30000);
+}
+
+export async function postSimulateurDiagnostic(req: unknown): Promise<unknown> {
+  return request("/api/simulateur/diagnostic", { method: "POST", body: JSON.stringify(req) });
 }
 
 export async function postOccupationCalc(req: {

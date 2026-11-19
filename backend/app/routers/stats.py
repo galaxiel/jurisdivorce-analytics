@@ -14,15 +14,18 @@ from ..schemas import (
     AbattementBucket,
     CourComparatif,
     DecisionFiltersQuery,
+    DemandesAnnexesStats,
     Facets,
     KpiOverview,
     MotifRejet,
     NatureSucces,
+    PensionStats,
     PCCorrelationPoint,
     PCDistribution,
     Piege,
     PreuveSucces,
     TendancePoint,
+    DemandeAnnexeStat,
 )
 from ..services.query import load_decisions, load_recompenses
 
@@ -290,6 +293,89 @@ def tendances(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(g
             taux_succes_pct=round(100 * sum(r.statut != "REJETE" for r in statutaires) / len(statutaires), 1) if statutaires else None,
         ))
     return out
+
+
+@router.get("/pension", response_model=PensionStats)
+def pension(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    """Pension alimentaire par enfant : médiane par cour et par tranche de revenus
+    du débiteur, modes de garde et partage des frais exceptionnels."""
+    decisions = [
+        d for d in load_decisions(db, filters) if d.pension_par_enfant is not None
+    ]
+    by_cour = defaultdict(list)
+    by_tranche = defaultdict(list)
+    TRANCHES = [(0, 1500, "< 1 500 €"), (1500, 2500, "1 500 – 2 500 €"),
+                (2500, 3500, "2 500 – 3 500 €"), (3500, 99999, "≥ 3 500 €")]
+    for d in decisions:
+        if d.juridiction:
+            by_cour[d.juridiction].append(d)
+        if d.revenus_debiteur_mois is not None:
+            for lo, hi, label in TRANCHES:
+                if lo <= d.revenus_debiteur_mois < hi:
+                    by_tranche[label].append(d)
+                    break
+    modes = Counter(d.mode_garde for d in decisions if d.mode_garde)
+    partage = [d for d in decisions if d.partage_frais_exceptionnels is not None]
+    return PensionStats(
+        par_cour=[PensionCour(cour=c, pension_mediane=_median(
+            [d.pension_par_enfant for d in g]), nb=len(g))
+            for c, g in sorted(by_cour.items(), key=lambda kv: -len(kv[1]))[:10]],
+        par_tranche_revenus=[PensionTranche(t, _median(
+            [d.pension_par_enfant for d in g]), len(g))
+            for t, g in sorted(by_tranche.items())],
+        pension_mediane_globale=_median([d.pension_par_enfant for d in decisions]),
+        modes_garde=[{"mode": m or "Non précisé", "nb": n} for m, n in modes.most_common()],
+        partage_frais_pct=round(100 * sum(d.partage_frais_exceptionnels for d in partage) / len(partage), 1) if partage else None,
+    )
+
+
+@router.get("/demandes-annexes", response_model=DemandesAnnexesStats)
+def demandes_annexes(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    """Taux d'échec des demandes annexes : nom d'usage, dommages-intérêts 266/1240,
+    divorce pour faute — et rejets de PC par écart de revenus."""
+    decisions = [d for d in load_decisions(db, filters) if d.source]
+    items = []
+
+    nom_vals = [d for d in decisions if d.nom_usage_accorde is not None]
+    items.append(DemandeAnnexeStat(
+        demande="Conservation du nom d'usage", nb_demandes=len(nom_vals),
+        taux_accords_pct=round(100 * sum(d.nom_usage_accorde for d in nom_vals) / len(nom_vals), 1) if nom_vals else None,
+        montant_moyen=None,
+        note="Sans accord de l'autre époux ni intérêt professionnel avéré, rejet quasi systématique.",
+    ))
+    di_vals = [d for d in decisions if d.di_accordes is not None]
+    di_acc = [d for d in di_vals if d.di_accordes > 0]
+    items.append(DemandeAnnexeStat(
+        demande="Dommages-intérêts (art. 266 / 1240)", nb_demandes=len(di_vals),
+        taux_accords_pct=round(100 * len(di_acc) / len(di_vals), 1) if di_vals else None,
+        montant_moyen=_mean([d.di_accordes for d in di_acc]),
+        note="Préjudice exceptionnel à prouver — accords minoritaires.",
+    ))
+    faute_vals = [d for d in decisions if d.divorce_faute_retenu is not None]
+    items.append(DemandeAnnexeStat(
+        demande="Divorce pour faute", nb_demandes=len(faute_vals),
+        taux_accords_pct=round(100 * sum(d.divorce_faute_retenu for d in faute_vals) / len(faute_vals), 1) if faute_vals else None,
+        montant_moyen=None,
+        note="Violation grave ou renouvelée des devoirs matrimoniaux requise.",
+    ))
+    a700 = [d for d in decisions if d.article_700_montant is not None]
+    items.append(DemandeAnnexeStat(
+        demande="Article 700 CPC (frais d'avocat)", nb_demandes=len(a700),
+        taux_accords_pct=100.0 if a700 else None,
+        montant_moyen=_mean(a700),
+        note="Souvent accordé partiellement.",
+    ))
+
+    pc_dem = [d for d in decisions if d.pc_demandee and d.ecart_ressources_totales is not None]
+    buckets = [(0, 1000, "< 1 000 €"), (1000, 2000, "1 000 – 2 000 €"),
+               (2000, 3500, "2 000 – 3 500 €"), (3500, 999999, "≥ 3 500 €")]
+    pc_rejet = []
+    for lo, hi, label in buckets:
+        g = [d for d in pc_dem if lo <= d.ecart_ressources_totales < hi]
+        if g:
+            pc_rejet.append({"bucket": label, "nb": len(g),
+                             "pct_rejet": round(100 * sum(not d.pc_accordee for d in g) / len(g), 1)})
+    return DemandesAnnexesStats(items=items, pc_rejet_par_ecart=pc_rejet)
 
 
 @router.get("/facets", response_model=Facets)

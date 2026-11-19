@@ -90,6 +90,11 @@ Schéma JSON de sortie :
   "reclamations_financieres": [{"nature": "Financement bien propre|Travaux amélioration|Remboursement emprunt immobilier post-séparation|Apport fonds propres / héritage|Recel de communauté|Compte joint vidé|Taxes foncières / assurance|Autre", "demandeur": "EPOUX_A|EPOUX_B", "montant_reclame": number|null, "montant_accorde": number|null, "statut": "ACCORDE_TOTALEMENT|ACCORDE_PARTIELLEMENT|REJETE", "regle_calcul": "Dépense faite|Profit subsistant|Nominalisme|Rejeté", "preuves_determinantes": [str], "cause_echec": str|null, "preuve_clef_retenue": str|null}],
   "prestation_compensatoire": {"demandee": boolean, "accordee": boolean, "forme": "CAPITAL_UNIQUE|CAPITAL_ECHELONNE|RENTE_MENSUELLE|ATTRIBUTION_BIEN|MIXTE|AUCUNE", "montant_demande_epoux_A": number|null, "montant_propose_epoux_B": number|null, "montant_accorde": number|null, "montant_rente_mensuelle": number|null, "duree_rente_mois": number|null, "ecart_revenus_mensuel": number|null, "criteres_determinants": [str]},
   "cout_issue": {"article_700_accorde": number|null, "partie_condamnee_depens": str|null, "delai_procedure_estime_mois": number|null},
+  "effets_patrimoniaux": {"date_effets_patrimoniaux_retenue": "YYYY-MM-DD"|null, "duree_vie_commune_annees": number|null},
+  "gestion_bien_locatif_indivis": {"loyers_encaisses_mois": number|null, "charges_deductibles_mois": number|null, "solde_restitue_indivision": number|null},
+  "pension_alimentaire": {"pension_par_enfant": number|null, "mode_garde": "Résidence classique + DVH|Garde alternée|Non précisé", "partage_frais_exceptionnels": boolean|null, "revenus_debiteur_mois": number|null},
+  "revenus": {"prestations_sociales_integrees": boolean|null, "ecart_ressources_totales": number|null},
+  "issue_demandes_annexes": {"nom_usage_accorde": boolean|null, "nom_usage_motif": str|null, "dommages_interets_accordes": number|null, "divorce_faute_retenu": boolean|null},
   "analyse_strategique": {"points_forts_gagnants": [str], "pieges_et_erreurs_a_eviter": [str], "resume_decision_3_lignes": str, "resume_pedagogique_3_lignes": str, "conseil_pratique_extrait": str}
 }
 Réponds UNIQUEMENT avec l'objet JSON."""

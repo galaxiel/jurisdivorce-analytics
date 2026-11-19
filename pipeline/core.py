@@ -241,6 +241,11 @@ CREATE TABLE IF NOT EXISTS decisions (
     pc_ecart_revenus_mensuel REAL, pc_criteres_json TEXT,
     pc_rente_mensuelle REAL, pc_duree_rente_mois INTEGER,
     article_700_montant REAL, partage_depens TEXT, delai_procedure_mois INTEGER,
+    date_effets_patrimoniaux TEXT, gestion_loyers_mois REAL, gestion_charges_mois REAL,
+    gestion_solde REAL, pension_par_enfant REAL, revenus_debiteur_mois REAL,
+    mode_garde TEXT, partage_frais_exceptionnels BOOLEAN, prestations_sociales_integrees BOOLEAN,
+    ecart_ressources_totales REAL, nom_usage_accorde BOOLEAN, nom_usage_motif TEXT,
+    di_accordes REAL, divorce_faute_retenu BOOLEAN,
     resume_3_lignes TEXT, resume_pedagogique TEXT, conseil_pratique TEXT,
     raw_text TEXT, extracted_json TEXT, text_md5 TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -426,6 +431,10 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
     pc = ex.get("prestation_compensatoire") or {}
     cout = ex.get("cout_issue") or (ex.get("frais_et_depens") or {})
     strat = ex.get("analyse_strategique") or {}
+    gest = ex.get("gestion_bien_locatif_indivis") or {}
+    pen = ex.get("pension_alimentaire") or {}
+    rev = ex.get("revenus") or {}
+    annexes = ex.get("issue_demandes_annexes") or {}
 
     criteres = pc.get("criteres_determinants") or pc.get("criteres") or []
     with conn:
@@ -442,9 +451,13 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 pc_montant_propose, pc_ecart_revenus_mensuel, pc_criteres_json,
                 pc_rente_mensuelle, pc_duree_rente_mois,
                 article_700_montant, partage_depens, delai_procedure_mois,
+                date_effets_patrimoniaux, gestion_loyers_mois, gestion_charges_mois, gestion_solde,
+                pension_par_enfant, revenus_debiteur_mois, mode_garde, partage_frais_exceptionnels,
+                prestations_sociales_integrees, ecart_ressources_totales,
+                nom_usage_accorde, nom_usage_motif, di_accordes, divorce_faute_retenu,
                 resume_3_lignes, resume_pedagogique, conseil_pratique,
                 raw_text, extracted_json, text_md5
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 decision_id, "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"),
                 normalize_juridiction(meta.get("juridiction")),
@@ -468,6 +481,20 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 norm_amount(cout.get("article_700_accorde") or cout.get("article_700_montant")),
                 cout.get("partie_condamnee_depens") or cout.get("partage_depens"),
                 _num(cout.get("delai_procedure_estime_mois")),
+                ex.get("effets_patrimoniaux", {}).get("date_effets_patrimoniaux_retenue") or ex.get("effets_patrimoniaux", {}).get("date"),
+                norm_amount(gest.get("loyers_encaisses_mois")),
+                norm_amount(gest.get("charges_deductibles_mois")),
+                norm_amount(gest.get("solde_restitue_indivision")),
+                norm_amount(pen.get("pension_par_enfant")),
+                norm_amount(pen.get("revenus_debiteur_mois")),
+                pen.get("mode_garde"),
+                _bool(pen.get("partage_frais_exceptionnels")),
+                _bool(rev.get("prestations_sociales_integrees")),
+                norm_amount(rev.get("ecart_ressources_totales")),
+                _bool(annexes.get("nom_usage_accorde")),
+                annexes.get("nom_usage_motif"),
+                norm_amount(annexes.get("dommages_interets_accordes")),
+                _bool(annexes.get("divorce_faute_retenu")),
                 strat.get("resume_decision_3_lignes"),
                 strat.get("resume_pedagogique_3_lignes"),
                 strat.get("conseil_pratique_extrait"),

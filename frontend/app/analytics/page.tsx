@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { exportUrl, useAnalytics, useFacets } from "@/lib/api";
+import { exportUrl, useAnalytics, useDemandesAnnexes, useFacets, usePension } from "@/lib/api";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import { KpiCard } from "@/components/analytics/kpi-card";
+import { PensionTab } from "@/components/analytics/pension-tab";
 import { AbattementDistributionChart } from "@/components/charts/abattement-distribution";
 import { BarComparatif } from "@/components/charts/bar-comparatif";
 import { MotifsRejetChart } from "@/components/charts/motifs-rejet";
@@ -15,13 +16,16 @@ import { TendancesChart } from "@/components/charts/tendances";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DecisionFilters } from "@/lib/types";
-import { formatEur, formatPct } from "@/lib/utils";
+import { cn, formatEur, formatPct } from "@/lib/utils";
 
-/* Vue 1 — Cockpit Global : KPIs réactifs aux filtres + analytics avancés. */
+/* Vue 1 — Cockpit Global : KPIs réactifs aux filtres + analytics avancés (onglets). */
 export default function AnalyticsPage() {
   const [filters, setFilters] = useState<DecisionFilters>({});
+  const [onglet, setOnglet] = useState<"patrimoine" | "pension">("patrimoine");
   const facets = useFacets();
   const { overview, comparatif, pc, abattements, natures, scatter, motifs, preuves, tendances } = useAnalytics(filters);
+  const pensionStats = usePension();
+  const demandesStats = useDemandesAnnexes();
 
   function onExport(format: "csv" | "json") {
     window.open(exportUrl(filters, format), "_blank");
@@ -55,6 +59,30 @@ export default function AnalyticsPage() {
         <KpiCard label="Rejets sans factures nominatives" value={formatPct(overview.data?.taux_echec_sans_factures_pct)} tone="destructive" />
       </div>
 
+      <div className="flex gap-2">
+        {[
+          { key: "patrimoine" as const, label: "Patrimoine & PC" },
+          { key: "pension" as const, label: "Pension & demandes annexes" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setOnglet(t.key)}
+            className={cn(
+              "rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+              onglet === t.key
+                ? "border-primary bg-primary/10 text-primary"
+                : "bg-card text-muted-foreground hover:bg-secondary",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {onglet === "pension" && <PensionTab pension={pensionStats} demandesAnnexes={demandesStats} />}
+
+      {onglet === "patrimoine" && (
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
@@ -140,6 +168,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+      )}
     </div>
   );
 }

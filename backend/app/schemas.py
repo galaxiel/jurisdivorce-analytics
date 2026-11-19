@@ -313,3 +313,86 @@ class RecompenseCalcResult(BaseModel):
     taux_rejet_amelioration_pct: Optional[float]
     taux_rejet_entretien_pct: Optional[float]
     alertes: List[str]
+
+
+# ---------------------------------------------------------------- V5 : pension & demandes annexes
+class PensionCour(BaseModel):
+    cour: str
+    pension_mediane: Optional[float]
+    nb: int
+
+
+class PensionTranche(BaseModel):
+    tranche: str
+    pension_mediane: Optional[float]
+    nb: int
+
+
+class PensionStats(BaseModel):
+    par_cour: List[PensionCour]
+    par_tranche_revenus: List[PensionTranche]
+    pension_mediane_globale: Optional[float]
+    modes_garde: List[Dict]
+    partage_frais_pct: Optional[float]
+
+
+class DemandeAnnexeStat(BaseModel):
+    demande: str
+    nb_demandes: int
+    taux_accords_pct: Optional[float]
+    montant_moyen: Optional[float]
+    note: Optional[str]
+
+
+class DemandesAnnexesStats(BaseModel):
+    items: List[DemandeAnnexeStat]
+    pc_rejet_par_ecart: List[Dict]
+
+
+# ---------------------------------------------------------------- V5 : Simulateur
+class SimBien(BaseModel):
+    type: str = Field(pattern="^(occupation|locatif|vehicule|creance)$")
+    description: str = ""
+    valeur: float = Field(0, ge=0)
+    credit: float = Field(0, ge=0)
+    quote_part_occupant: float = Field(50, ge=0, le=100)
+    occupant: str = Field("A", pattern="^[AB]$")
+    valeur_locative: float = Field(0, ge=0)
+    mois_occupation: int = Field(0, ge=0)
+    loyers: float = Field(0, ge=0)
+    charges: float = Field(0, ge=0)
+    mois_gestion: int = Field(0, ge=0)
+    gestionnaire: str = Field("A", pattern="^[AB]$")
+    jouissance: str = Field("A", pattern="^[AB]$")
+    montant: float = Field(0, ge=0)
+    debiteur: str = Field("A", pattern="^[AB]$")
+
+
+class SimulateurRequest(BaseModel):
+    juridiction: str
+    statut: str = Field(pattern="^(MARIAGE_CRA|MARIAGE_SEP|MARIAGE_AUTRE|PACS|CONCUBINAGE)$")
+    date_mariage: str
+    date_separation: str
+    date_assignation: str
+    enfants: int = Field(0, ge=0, le=12)
+    mode_garde: str = Field("na", pattern="^(classique|alternee|na)$")
+    rev_a_net: float = Field(0, ge=0)
+    rev_a_compl: float = Field(0, ge=0)
+    rev_a_presta: float = Field(0, ge=0)
+    rev_a_charges: float = Field(0, ge=0)
+    rev_b_net: float = Field(0, ge=0)
+    rev_b_compl: float = Field(0, ge=0)
+    rev_b_presta: float = Field(0, ge=0)
+    rev_b_charges: float = Field(0, ge=0)
+    biens: List[SimBien] = []
+    demandes: Dict = {}
+
+
+class SimulateurReport(BaseModel):
+    chronologie: Dict
+    ressources: Dict
+    pc: Optional[Dict]
+    pension: Optional[Dict]
+    bilan: Dict
+    radar: List[Dict]
+    notes: List[str]

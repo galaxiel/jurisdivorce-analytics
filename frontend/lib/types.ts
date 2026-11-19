@@ -423,3 +423,32 @@ export interface ArchiveInfo {
   error: string | null;
   processed_at: string | null;
 }
+
+export interface PensionCour {
+  cour: string;
+  pension_mediane: number | null;
+  nb: number;
+}
+export interface PensionTranche {
+  tranche: string;
+  pension_mediane: number | null;
+  nb: number;
+}
+export interface PensionStats {
+  par_cour: PensionCour[];
+  par_tranche_revenus: PensionTranche[];
+  pension_mediane_globale: number | null;
+  modes_garde: { mode: string; nb: number }[];
+  partage_frais_pct: number | null;
+}
+export interface DemandeAnnexeStat {
+  demande: string;
+  nb_demandes: number;
+  taux_accords_pct: number | null;
+  montant_moyen: number | null;
+  note: string | null;
+}
+export interface DemandesAnnexesStats {
+  items: DemandeAnnexeStat[];
+  pc_rejet_par_ecart: { bucket: string; nb: number; pct_rejet: number }[];
+}

@@ -70,6 +70,22 @@ class Decision(Base):
     partage_depens: Mapped[Optional[str]] = mapped_column(String)
     delai_procedure_mois: Mapped[Optional[int]] = mapped_column(Integer)
 
+    # V5 — effets patrimoniaux, gestion locative, pension & demandes annexes
+    date_effets_patrimoniaux: Mapped[Optional[str]] = mapped_column(String)
+    gestion_loyers_mois: Mapped[Optional[float]] = mapped_column(Float)
+    gestion_charges_mois: Mapped[Optional[float]] = mapped_column(Float)
+    gestion_solde: Mapped[Optional[float]] = mapped_column(Float)
+    pension_par_enfant: Mapped[Optional[float]] = mapped_column(Float)
+    revenus_debiteur_mois: Mapped[Optional[float]] = mapped_column(Float)
+    mode_garde: Mapped[Optional[str]] = mapped_column(String)
+    partage_frais_exceptionnels: Mapped[Optional[bool]] = mapped_column(Boolean)
+    prestations_sociales_integrees: Mapped[Optional[bool]] = mapped_column(Boolean)
+    ecart_ressources_totales: Mapped[Optional[float]] = mapped_column(Float)
+    nom_usage_accorde: Mapped[Optional[bool]] = mapped_column(Boolean)
+    nom_usage_motif: Mapped[Optional[str]] = mapped_column(Text)
+    di_accordes: Mapped[Optional[float]] = mapped_column(Float)
+    divorce_faute_retenu: Mapped[Optional[bool]] = mapped_column(Boolean)
+
     # Analyse stratégique (aplanie pour filtres/affichage rapides)
     resume_3_lignes: Mapped[Optional[str]] = mapped_column(Text)
     resume_pedagogique: Mapped[Optional[str]] = mapped_column(Text)

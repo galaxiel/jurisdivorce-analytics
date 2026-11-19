@@ -89,6 +89,14 @@ def main(db_path: str, out_dir: str) -> None:
             "delai_procedure_mois": d["delai_procedure_mois"],
             "conseil_pratique": d["conseil_pratique"],
             "raw_excerpt": (d["raw_text"] or "")[:600],
+            "pension_par_enfant": d["pension_par_enfant"],
+            "revenus_debiteur_mois": d["revenus_debiteur_mois"],
+            "mode_garde": d["mode_garde"],
+            "ecart_ressources_totales": d["ecart_ressources_totales"],
+            "nom_usage_accorde": d["nom_usage_accorde"],
+            "di_accordes": d["di_accordes"],
+            "divorce_faute_retenu": d["divorce_faute_retenu"],
+            "statut": d["type_procedure"],
             "recompenses": [{
                 "id": r["id"], "categorie": r["categorie"], "demandeur": r["demandeur"],
                 "montant_reclame": r["montant_reclame"], "montant_accorde": r["montant_accorde"],
@@ -254,6 +262,71 @@ def main(db_path: str, out_dir: str) -> None:
     } for m, g in sorted(((m, [r for r in rejetes if r["motif_echec"].strip(" .") == m])
                           for m, _ in counts.most_common(10)), key=lambda kv: -len(kv[1]))])
 
+    # ── pension alimentaire (V5)
+    pen_pool = [d for d in decisions if d["pension_par_enfant"] is not None]
+    by_cour = defaultdict(list)
+    by_tranche = defaultdict(list)
+    TR = [(0, 1500, "< 1 500 €"), (1500, 2500, "1 500 – 2 500 €"),
+          (2500, 3500, "2 500 – 3 500 €"), (3500, 99999, "≥ 3 500 €")]
+    for d in pen_pool:
+        if d["juridiction"]:
+            by_cour[d["juridiction"]].append(d)
+        if d["revenus_debiteur_mois"] is not None:
+            for lo, hi, label in TR:
+                if lo <= d["revenus_debiteur_mois"] < hi:
+                    by_tranche[label].append(d)
+                    break
+    modes = Counter(d["mode_garde"] for d in pen_pool if d["mode_garde"])
+    partage = [d for d in pen_pool if d["partage_frais_exceptionnels"] is not None]
+    dump("pension.json", {
+        "par_cour": [{"cour": c, "pension_mediane": median(
+            [d["pension_par_enfant"] for d in g]), "nb": len(g)}
+            for c, g in sorted(by_cour.items(), key=lambda kv: -len(kv[1]))[:10]],
+        "par_tranche_revenus": [{"tranche": t, "pension_mediane": median(
+            [d["pension_par_enfant"] for d in g]), "nb": len(g)}
+            for t, g in sorted(by_tranche.items())],
+        "pension_mediane_globale": median([d["pension_par_enfant"] for d in pen_pool]),
+        "modes_garde": [{"mode": m or "Non précisé", "nb": n} for m, n in modes.most_common()],
+        "partage_frais_pct": round(100 * sum(d["partage_frais_exceptionnels"] for d in partage) / len(partage), 1) if partage else None,
+    })
+
+    # ── demandes annexes (V5)
+    nom_vals = [d for d in decisions if d["nom_usage_accorde"] is not None]
+    di_vals = [d for d in decisions if d["di_accordes"] is not None]
+    di_acc = [d for d in di_vals if d["di_accordes"] > 0]
+    faute_vals = [d for d in decisions if d["divorce_faute_retenu"] is not None]
+    a700 = [d["article_700_montant"] for d in decisions if d["article_700_montant"] is not None]
+    pc_dem = [d for d in decisions if d["pc_demandee"] and d["ecart_ressources_totales"] is not None]
+    PC_B = [(0, 1000, "< 1 000 €"), (1000, 2000, "1 000 – 2 000 €"),
+            (2000, 3500, "2 000 – 3 500 €"), (3500, 999999, "≥ 3 500 €")]
+    pc_rejet = []
+    for lo, hi, label in PC_B:
+        g = [d for d in pc_dem if lo <= d["ecart_ressources_totales"] < hi]
+        if g:
+            pc_rejet.append({"bucket": label, "nb": len(g),
+                             "pct_rejet": round(100 * sum(not d["pc_accordee"] for d in g) / len(g), 1)})
+    dump("demandes_annexes.json", {
+        "items": [
+            {"demande": "Conservation du nom d'usage", "nb_demandes": len(nom_vals),
+             "taux_accords_pct": round(100 * sum(d["nom_usage_accorde"] for d in nom_vals) / len(nom_vals), 1) if nom_vals else None,
+             "montant_moyen": None,
+             "note": "Sans accord de l'autre époux ni intérêt professionnel avéré, rejet quasi systématique."},
+            {"demande": "Dommages-intérêts (art. 266 / 1240)", "nb_demandes": len(di_vals),
+             "taux_accords_pct": round(100 * len(di_acc) / len(di_vals), 1) if di_vals else None,
+             "montant_moyen": mean([d["di_accordes"] for d in di_acc]),
+             "note": "Préjudice exceptionnel à prouver — accords minoritaires."},
+            {"demande": "Divorce pour faute", "nb_demandes": len(faute_vals),
+             "taux_accords_pct": round(100 * sum(d["divorce_faute_retenu"] for d in faute_vals) / len(faute_vals), 1) if faute_vals else None,
+             "montant_moyen": None,
+             "note": "Violation grave ou renouvelée des devoirs matrimoniaux requise."},
+            {"demande": "Article 700 CPC (frais d'avocat)", "nb_demandes": len(a700),
+             "taux_accords_pct": 100.0 if a700 else None, "montant_moyen": mean(a700),
+             "note": "Souvent accordé partiellement."},
+        ],
+        "pc_rejet_par_ecart": pc_rejet,
+    })
+
+    # ── facets
     # ── facets
     dump("facets.json", {
         "juridictions": sorted({d["juridiction"] for d in decisions if d["juridiction"]}),

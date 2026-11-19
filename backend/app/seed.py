@@ -224,6 +224,34 @@ def gen_decision(i: int, jur: str):
             "cause_echec": motif,
         })
 
+    # --- V5 : gestion locative, pension, prestations, demandes annexes
+    gestion = None
+    if immo and random.random() < 0.15:  # bien locatif indivis géré par un époux
+        loyers = round(random.uniform(400, 1400), 2)
+        charges = round(loyers * random.uniform(0.25, 0.6), 2)
+        gestion = {
+            "loyers_encaisses_mois": loyers, "charges_deductibles_mois": charges,
+            "solde_restitue_indivision": round((loyers - charges) * random.randint(6, 36), 2),
+        }
+    pension_par_enfant = revenus_deb = None
+    mode_garde = None
+    partage_frais = None
+    if enfants > 0 and random.random() < 0.75:
+        mode_garde = random.choice(["Résidence classique + DVH", "Garde alternée"])
+        rev_debiteur = round(random.uniform(1200, 4200), 2)
+        barème = {"1": 0.18, "2": 0.155, "3": 0.135, "4": 0.12, "5": 0.105}.get(
+            str(min(enfants, 5)), 0.095) if mode_garde == "Résidence classique + DVH" else 0.02
+        pension_par_enfant = round(rev_debiteur * barème / 1, 2)
+        revenus_deb = rev_debiteur
+        partage_frais = random.random() < 0.85
+    presta_sociales = random.random() < 0.35
+    ecart_revenus_total = None
+    if pc_demandee:
+        ecart_revenus_total = round(abs(random.uniform(300, 5200)), 2)
+    nom_usage = random.random() < 0.12
+    di = round(random.uniform(1000, 15000), 2) if random.random() < 0.08 else None
+    faute = type_procedure == "Divorce contentieux" and random.random() < 0.25
+
     # --- Résumés
     pieces = [f"Liquidation du régime matrimonial après {duree} ans de mariage ({REGIME_FR[regime]})."]
     if occ_accordee:
@@ -302,6 +330,18 @@ def gen_decision(i: int, jur: str):
             "duree_rente_mois": pc_rente_mois, "ecart_revenus_mensuel": pc_ecart,
             "criteres_determinants": pc_criteres,
         },
+        "effets_patrimoniaux": {"date_effets_patrimoniaux_retenue": d.isoformat(), "duree_vie_commune_annees": duree},
+        "gestion_bien_locatif_indivis": gestion,
+        "pension_alimentaire": {
+            "pension_par_enfant": pension_par_enfant, "mode_garde": mode_garde,
+            "partage_frais_exceptionnels": partage_frais, "revenus_debiteur_mois": revenus_deb,
+        },
+        "revenus": {"prestations_sociales_integrees": presta_sociales, "ecart_ressources_totales": ecart_revenus_total},
+        "issue_demandes_annexes": {
+            "nom_usage_accorde": nom_usage if nom_usage is not None else False,
+            "nom_usage_motif": "Intérêt de l'enfant" if nom_usage else None,
+            "dommages_interets_accordes": di, "divorce_faute_retenu": faute,
+        },
         "cout_issue": {
             "article_700_accorde": a700, "partie_condamnee_depens": depens,
             "delai_procedure_estime_mois": delai_mois,
@@ -334,6 +374,20 @@ def gen_decision(i: int, jur: str):
         pc_rente_mensuelle=pc_rente, pc_duree_rente_mois=pc_rente_mois,
         article_700_montant=a700, partage_depens=depens,
         delai_procedure_mois=delai_mois,
+        date_effets_patrimoniaux=d.isoformat(),
+        gestion_loyers_mois=(gestion or {}).get("loyers_encaisses_mois"),
+        gestion_charges_mois=(gestion or {}).get("charges_deductibles_mois"),
+        gestion_solde=(gestion or {}).get("solde_restitue_indivision"),
+        pension_par_enfant=pension_par_enfant,
+        revenus_debiteur_mois=revenus_deb,
+        mode_garde=mode_garde,
+        partage_frais_exceptionnels=partage_frais,
+        prestations_sociales_integrees=presta_sociales,
+        ecart_ressources_totales=ecart_revenus_total,
+        nom_usage_accorde=nom_usage,
+        nom_usage_motif=("Intérêt de l'enfant" if nom_usage else None),
+        di_accordes=di,
+        divorce_faute_retenu=faute,
         resume_3_lignes=resume, resume_pedagogique=resume_peda,
         conseil_pratique=extracted["analyse_strategique"]["conseil_pratique_extrait"],
         raw_text=raw_text,
