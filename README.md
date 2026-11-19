@@ -1,56 +1,30 @@
 # JurisDivorce Analytics
 
+> **📘 Guide d'utilisation complet** : [`GUIDE_UTILISATION.md`](GUIDE_UTILISATION.md) (pas à pas, avec exemples chiffrés) — version PDF : [`GUIDE_UTILISATION.pdf`](GUIDE_UTILISATION.pdf)
+
 Plateforme d'analyse statistique et décisionnelle de la jurisprudence française en droit de la
-famille (divorce, liquidation de régime matrimonial & partage) — **v2 : ingestion massive,
-schéma enrichi, cockpit à filtres croisés, moniteur du pipeline**.
-
-> **🤖 Reprise par un agent IA** : lire d'abord [`AGENTS.md`](AGENTS.md) (règles + commandes
-> de vérification), puis [`docs/STATE.md`](docs/STATE.md) (état vérifié + roadmap) et
-> [`docs/DECISIONS.md`](docs/DECISIONS.md) (journal des choix techniques). Les prompts
-> fondateurs sont archivés dans [`docs/`](docs/).
+famille (divorce, liquidation de régime matrimonial & partage) — **v4** : ingestion massive
+multi-fonds, recherche plein texte FTS5, calculateur juridique, radar des pièges, moniteur du
+pipeline, suite de tests et CI.
 
 ```
-DILA Open Data (CAPP · CASS · TJ, toutes les archives historiques)
-        │  pipeline/dila.py       — aspirateur récursif + manifest processed_archives
+DILA Open Data (CAPP · CASS · TJ — toutes les archives historiques, XML + JSON)
+        │  pipeline/dila.py    — aspirateur récursif, tri taille/date, manifest processed_archives
         ▼
-pipeline/core.py            — filtre normalisé (1 terme fort OU 2 secondaires), dédoublonnage MD5,
-                              troncature par sections (dispositif conservé), réparation JSON
+pipeline/core.py          — filtre normalisé (1 terme fort OU 2 secondaires), dédoublonnage MD5,
+                            troncature par sections (dispositif conservé), réparation JSON,
+                            normalisation juridictions/régimes, extraction XML TEXTE_JURI_JUDI
         ▼
-pipeline/ingest.py          — worker httpx + Semaphore(25-50), tokens trackés, pause/reprise,
-                              heartbeat temps réel (pipeline_state / pipeline_logs)
+pipeline/ingest.py        — worker httpx + concurrence adaptative 429/503, BatchWriter (lots de 25),
+                            DLQ failed_decisions, tokens trackés, config à chaud (app_config)
         ▼
-backend/jurisprudence.db    — SQLite/Postgres, colonnes aplanies v2 (type_procedure, natures
-                              étendues, montants PC demandés/proposés, écart de revenus, délai…)
+backend/jurisprudence.db  — SQLite/Postgres, colonnes aplanies v2+, index FTS5, migration auto
         ▼
-API FastAPI  (filtres croisés partagés /decisions · /stats/* · /export, export CSV/JSON)
+API FastAPI               — filtres croisés partagés (/decisions · /stats/* · /export),
+                            calculateur 815-9/1469, pièges, tendances, pipeline monitor, /api/health
         ▼
-Frontend Next.js  — Cockpit Global · Simulateur « Mon Cas » · Explorateur · Moniteur Pipeline
-```
-
-## Arborescence
-
-```
-jurisdivorce/
-├── backend/                 # API FastAPI v2 (SQLAlchemy, migration auto des colonnes v2)
-│   ├── app/
-│   │   ├── main.py          # + ensure_schema() & tables pipeline au démarrage
-│   │   ├── models.py        # Decision v2 + Recompense v2 (nature, règle de calcul, preuves)
-│   │   ├── schemas.py       # contrats Pydantic v2 (filtres croisés, moniteur, cockpit)
-│   │   ├── routers/         # stats.py (8 endpoints filtrés) · decisions.py (+ /export)
-│   │   │                    # boussole.py · pipeline.py (state/logs/control/archives)
-│   │   ├── services/        # query.py (filtres partagés) · predictor.py (checklist/alertes)
-│   │   └── seed.py          # démonstration SYNTHETIQUE_DEMO (1135 décisions)
-├── pipeline/
-│   ├── core.py              # filtre, troncature, réparation JSON, heartbeat, schéma SQL
-│   ├── dila.py              # aspirateur Open Data multi-fonds (CAPP/CASS/TJ…)
-│   ├── ingest.py            # orchestrateur CLI + worker GLM haute cadence
-│   └── ingest_judilibre_brut.py  # script v1 conservé (autonome)
-└── frontend/                # Next.js 14 — 5 vues, thème centralisé (theme.config.ts)
-    ├── app/                 # page · analytics · simulateur · decisions · pipeline
-    │                        # (/boussole et /jurisprudence redirigent vers les nouvelles)
-    ├── components/          # ui/ · analytics/ (FilterBar, KpiCard, DecisionCard) · charts/
-    │                        # boussole/ (étapes + résultat avec checklist/alertes/export)
-    └── lib/                 # api.ts (hooks + polling pipeline) · types.ts · utils.ts
+Frontend Next.js          — 7 vues : Accueil · Cockpit · Mon Cas · Calculateur · Jurisprudence ·
+                            Pièges · Pipeline (thème centralisé, mode sombre/clair)
 ```
 
 ## Démarrage rapide
@@ -58,35 +32,39 @@ jurisdivorce/
 ```bash
 # 1. Backend
 cd backend && pip install -r requirements.txt
-python -m app.seed                      # jeu de démonstration (0 token)
-python -m uvicorn app.main:app --reload --port 8000   # Swagger : /docs
+python -m app.seed                      # 1 135 décisions de démonstration (0 token)
+python -m uvicorn app.main:app --reload --port 8000   # Swagger : http://127.0.0.1:8000/docs
 
 # 2. Frontend
 cd frontend && npm install
-npm run dev                             # http://localhost:3000 (ou -- -p 3100)
+npm run dev                             # http://localhost:3000 (ou -- -p 3100 si le 3000 est occupé)
+
+# 3. Tests & CI
+pytest tests -q                         # 26 tests (pipeline + API)
+# La CI GitHub (.github/workflows/ci.yml) exécute seed + pytest + dry-run + build à chaque push.
 ```
 
-## 🚀 Ingestion massive CAPP + CASS + TJ (passage à l'échelle)
+## 🚀 Ingestion massive CAPP + CASS + TJ
 
 ```bash
 pip install -r pipeline/requirements.txt
 export ZHIPU_API_KEY="votre_clé_zhipu"          # quota 300 M tokens/jour sur GLM Flash
 
-# 0) Comptage complet SANS consommer de tokens (recommandé en premier) :
-python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --dry-run
-
-# 1) Campagne complète : TOUTES les archives historiques des 3 fonds :
-python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --analyze
-
-# 2) Pilotage pendant la campagne (CLI ou UI /pipeline) :
-python -m pipeline.ingest status
-python -m pipeline.ingest control pause|resume|stop
+python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --dry-run   # comptage, 0 token
+python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --analyze   # campagne complète
+python -m pipeline.ingest status                                          # état
+python -m pipeline.ingest control pause|resume|stop                       # pilotage
+python -m pipeline.ingest retry-failed                                    # relancer la DLQ
 ```
 
-Variables : `MAX_CONCURRENCY` (défaut 25, montez à 50 pour saturer le quota),
-`MAX_CHARS` (défaut 48000 — troncature intelligente : en-tête + motifs financiers +
-dispositif), `JURILIBRE_OPENDATA_URL`, `JURISDIVORCE_MODEL` (défaut `glm-4-flash`).
-Flags équivalents : `--concurrency 50 --max-chars 16000`.
+Ce que fait la campagne : aspiration récursive des **archives historiques** DILA (manifest
+`processed_archives` → reprise), filtre sans faux négatifs (pseudonymisation acceptée, seuls
+les motifs explicitement occultés ou textes < 1 200 caractères sont écartés), worker haute
+cadence avec **réparation JSON** et **troncature par sections** (en-tête + motifs + dispositif),
+**DLQ** des échecs, heartbeat temps réel → moniteur `/pipeline`.
+
+**Preuves réelles** (dry-run, 2026-11-19) : CAPP 292 Mo → 25 999 décisions parcourues,
+**2 001 conservées** ; CASS 264 Mo → 145 421 fichiers XML lus, **785 conservées**.
 
 ### ⚡ Débit : la vraie contrainte est l'enveloppe de tokens, pas la concurrence
 
@@ -96,45 +74,34 @@ Flags équivalents : `--concurrency 50 --max-chars 16000`.
 | `MAX_CHARS=16000` (équilibré) | ~4,7 k + 2,5 k ≈ **7 k** | **~42 000** |
 | `MAX_CHARS=12000` (débit max) | ~3,5 k + 2,5 k ≈ **6 k** | **~50 000** |
 
-- **Concurrence** : démarrez `--concurrency 50`. Le limiteur **adaptatif** divise la
-  concurrence par 2 à chaque 429 (50 → 25 → 12…), retente chaque décision en backoff
-  exponentiel, puis remonte de +10 % toutes les 90 s sans erreur — le pipeline s'auto-règle
-  à la limite réelle de Zhipu sans intervention.
-- **50 000–100 000 décisions/jour** n'est atteignable que si le budget de troncature suit :
-  à `MAX_CHARS=12000`, chaque décision coûte ~6 k tokens et la vitesse réseau/GLM (≈2-4
-  décisions/s à 30-50 requêtes simultanées) laisse l'enveloppe 300 M comme seul plafond.
-- Sources réelles (vérifiées en ligne le 2026-11-19) : `/OPENDATA/CAPP/Freemium_capp_global_…tar.gz`
-  (**292 Mo, XML DILA `TEXTE_JURI_JUDI` — 85 % des décisions chiffrées de liquidation-partage**)
-  et `/OPENDATA/CASS/Freemium_cass_global_…tar.gz`. L'extracteur XML + JSON est intégré ;
-  les nouveaux dumps du jour sont repris automatiquement au prochain lancement (manifest).
+- **Concurrence** : démarrez `--concurrency 50` — le limiteur adaptatif divise par 2 à chaque
+  429 (50 → 25 → 12…), retente en backoff exponentiel, remonte de +10 % toutes les 90 s sans erreur.
+- Réglages modifiables **à chaud** depuis `/pipeline` (table `app_config` relue à chaque décision)
+  ou `.env` (`ZHIPU_API_KEY`, `MAX_CONCURRENCY`, `MAX_CHARS`, `JURISDIVORCE_MODEL`).
 
-Ce que fait la campagne :
-
-1. **Aspiration multi-fonds** — parcours récursif de l'index public DILA ; **toutes** les
-   archives `.tar.gz`/`.zip` historiques sont découvertes (pas seulement le dernier mois) ;
-   le manifest `processed_archives` permet la **reprise** (les archives `done` sont ignorées,
-   `--force` pour retraiter).
-2. **Filtre sans faux négatifs** — texte normalisé (minuscules, sans accents) : 1 terme fort
-   (`état liquidatif`, `prestation compensatoire`, `recel de communauté`…) OU ≥2 termes
-   secondaires dans un contexte divorce/époux. La pseudonymisation (`[…]`, `***`) n'est
-   **jamais** un motif de rejet ; seuls les motifs explicitement occultés ou les textes
-   < 1 200 caractères sont écartés.
-3. **Worker haute cadence** — `httpx` + `Semaphore(MAX_CONCURRENCY)`, réparation JSON
-   (balises markdown, virgules finales), dédoublonnage MD5, comptage des tokens/jour.
-4. **Monitoring** — `pipeline_state` (heartbeat temps réel) + `pipeline_logs` alimentent
-   l'UI `/pipeline` : archives parcourues, décisions conservées/analysées, vitesse, tokens,
-   erreurs, boutons Pause/Reprise/Stop.
-
-## Modules livrés
+## Les 7 vues
 
 | Vue | Route | Contenu |
 |---|---|---|
-| Accueil | `/` | Hero + KPIs nationaux + accès modules |
-| **Cockpit Global** | `/analytics` | KPIs réactifs aux filtres croisés + 7 graphiques (comparateur inter-cours, distribution des abattements, succès par nature de réclamation réclamé/obtenu, corrélation durée/écart revenus vs PC, distribution PC, motifs de rejet, succès par preuve) |
-| **Filtres croisés** | sticky, partagé | Cour, année, régime, contentieux, nature de réclamation, issue, immobilier, fourchette de montants, plein texte + **Export CSV/JSON** de la sélection |
-| **Simulateur « Mon Cas »** | `/simulateur` | 4 étapes → fourchettes observées, chances par preuve, **checklist des preuves indispensables** (fréquences issues des arrêts gagnants), **alertes pièges** (fréquences des causes d'échec), 5 décisions jumelles, **dossier de synthèse Markdown + impression PDF** |
-| **Explorateur** | `/decisions` | Cartes avec badges financiers (`Demande X → Obtenu Y`, `IO … abattement Z %`), fiche détaillée (résumé IA vs texte intégral, règles de calcul, preuves déterminantes, conseil pratique) |
-| **Moniteur Pipeline** | `/pipeline` | Statut, archives, compteurs, tokens du jour, vitesse, logs en direct, contrôle pause/reprise/stop |
+| Accueil | `/` | Hero + KPIs nationaux + accès modules + bandeau démo |
+| **Cockpit Global** | `/analytics` | KPIs réactifs aux filtres croisés + 8 graphiques (comparateur inter-cours, **tendances par année**, distribution des abattements, succès par nature réclamé/obtenu, corrélation PC, distribution PC, motifs de rejet, succès par preuve) |
+| **Simulateur « Mon Cas »** | `/simulateur` | 4 étapes → fourchettes observées, chances par preuve, checklist des preuves gagnantes, alertes pièges, 5 décisions jumelles, **Dire à Notaire** (Word/Markdown/PDF) |
+| **Calculateur juridique** | `/calculateur` | Art. 815-9 : indemnité d'occupation (abattement médian de la cour, **alerte prescription quinquennale**, 10 arrêts comparables) · Art. 1469 : profit subsistant vs dépense faite + taux de rejet constatés |
+| **Explorateur** | `/decisions` | Recherche plein texte **FTS5** + filtres multicritères, cartes avec badges financiers, fiche détaillée (IA vs texte intégral) |
+| **Radar des Pièges** | `/pieges` | 10 motifs de rejet : % des échecs, montant moyen perdu, arrêts illustratifs liés |
+| **Moniteur Pipeline** | `/pipeline` | Archives, compteurs (fichiers lus / parcourues / conservées / analysées), tokens, vitesse, logs, **config à chaud**, **relancer les échecs**, benchmark |
+
+**Filtres croisés universels** (Cockpit + Explorateur) : cour, année, régime, contentieux,
+nature de réclamation, issue, immobilier, fourchette de montants, plein texte — +
+**Export CSV/JSON** de la sélection.
+
+## Tests & CI
+
+- `tests/` : **26 tests pytest** (filtre normalisé, null vs 0, réparation JSON, troncature,
+  XML DILA, limiteur adaptatif, BatchWriter, 20 routes API, calculateur, pièges, tendances,
+  FTS, démo, config, export). Lancer : `pytest tests -q`.
+- CI : `.github/workflows/ci.yml` — à chaque push : deps → seed → pytest → dry-run pipeline
+  (backend) et npm ci → build (frontend).
 
 ## Architecture (re-skin en une passe)
 
@@ -142,12 +109,21 @@ Ce que fait la campagne :
   polices, ombres) est centralisée — changer les valeurs = nouvelle charte, rien d'autre.
 - Aucun `fetch` dans les composants d'affichage : tout passe par `lib/api.ts`.
 - Types TypeScript alignés manuellement sur `backend/app/schemas.py`.
-- Migration légère : `ensure_schema()` ajoute les colonnes v2 en `ALTER TABLE` sans perte.
+- Migration légère : `ensure_schema()` ajoute les colonnes en `ALTER TABLE` sans perte ;
+  `ensure_fts()` maintient l'index plein texte (triggers + rebuild).
+
+## Kit de reprise par un agent
+
+- [`AGENTS.md`](AGENTS.md) — règles d'architecture non négociables + commandes de vérification.
+- [`docs/STATE.md`](docs/STATE.md) — état vérifié (avec preuves chiffrées) + roadmap.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — journal des choix techniques (contexte → décision → pourquoi).
+- [`docs/cahier_des_charges_v1.md`](docs/cahier_des_charges_v1.md) et
+  [`docs/mission_refonte_v2.md`](docs/mission_refonte_v2.md) — prompts fondateurs archivés.
 
 ## Avertissement
 
-Outil statistique **indicatif** : ne constitue pas un avis juridique. Les données livrées sont
-synthétiques (`source = SYNTHETIQUE_DEMO`) ; exécuter la campagne d'ingestion remplace ces
-lignes par de vraies décisions (`source = JUDILIBRE_OD`). Les archives téléchargées vont dans
-`archives/` (jamais dans le code) et sont supprimées après traitement (`--keep-archives` pour
-les conserver).
+Outil statistique **indicatif** : il ne constitue pas un avis juridique. Les données livrées
+sont synthétiques (`source = SYNTHETIQUE_DEMO`) ; exécuter la campagne d'ingestion remplace
+ces lignes par de vraies décisions (`source = JUDILIBRE_OD`). Les archives téléchargées vont
+dans `archives/` (jamais dans le code, jamais dans git) et sont supprimées après traitement
+(`--keep-archives` pour les conserver).

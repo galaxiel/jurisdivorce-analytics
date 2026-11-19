@@ -15,20 +15,9 @@ redirigent vers `/simulateur` et `/decisions`.
 ## Commandes de vérification (à exécuter après CHAQUE modification)
 
 ```bash
-# 1. Backend : smoke test complet des endpoints (14 routes doivent répondre 200)
-export PYTHONPATH="$PWD/backend"
-python -m app.seed              # régénère les données de démo (réinitialise la base)
-python - <<'EOF'
-from fastapi.testclient import TestClient
-from app.main import app
-c = TestClient(app)
-for u in ["/api/health","/api/stats/overview","/api/stats/facets","/api/stats/comparatif-cours",
-          "/api/stats/abattement-distribution","/api/stats/succes-par-nature","/api/stats/pc-correlation",
-          "/api/stats/top-motifs-rejet","/api/decisions?page_size=2","/api/decisions/demo-00001",
-          "/api/decisions/export?format=json","/api/pipeline/state"]:
-    r = c.get(u); assert r.status_code == 200, (u, r.status_code)
-print("backend OK")
-EOF
+# 1. Suite pytest formelle : 26 tests (pipeline + API, ~3 s) — DOIT rester vert
+pytest tests -q
+#    (après toute modification du seed/schéma : python -m app.seed depuis backend/ d'abord)
 
 # 2. Frontend : type-check + build + prerender (doit passer sans erreur)
 cd frontend && npm run build && cd ..
@@ -36,6 +25,9 @@ cd frontend && npm run build && cd ..
 # 3. Pipeline : dry-run (0 token) sur une archive de test
 python -m pipeline.ingest run --local <archive.tar.gz> --dry-run --db /tmp/test.db
 python -m pipeline.ingest status --db /tmp/test.db
+
+# La CI (.github/workflows/ci.yml) rejoue 1 + 2 + un dry-run pipeline à chaque push :
+# `gh run list --repo galaxiel/jurisdivorce-analytics` pour vérifier qu'elle reste verte.
 ```
 
 ## Environnement (machine Windows de l'utilisateur)
@@ -71,19 +63,25 @@ python -m pipeline.ingest status --db /tmp/test.db
 | Besoin | Fichier(s) |
 |---|---|
 | Nouveau filtre croisé | `backend/app/schemas.py` (`DecisionFiltersQuery`) + `services/query.py` + `frontend/lib/types.ts` + `components/analytics/filter-bar.tsx` |
-| Nouveau graphique | `backend/app/routers/stats.py` + `frontend/components/charts/*` + `app/analytics/page.tsx` |
+| Nouveau graphique / tendance | `backend/app/routers/stats.py` + `frontend/components/charts/*` + `app/analytics/page.tsx` |
 | Nouvelle vue frontend | `frontend/app/<route>/page.tsx` + composants dédiés ; ancienne route → redirect |
 | Évolution du schéma d'extraction LLM | `pipeline/ingest.py` (`SYSTEM_PROMPT`) + `pipeline/core.py` (`save_decision`) + `models.py` + `schemas.py` + `types.ts` (5 fichiers, toujours ensemble) |
 | Logique d'estimation « Mon Cas » | `backend/app/services/predictor.py` (percentiles, checklist, alertes) |
-| Débit/concurrence GLM | `pipeline/core.py` (`AdaptiveLimiter`) + flags `--concurrency`/`--max-chars` de `pipeline/ingest.py` |
-| Sources Open Data | `pipeline/dila.py` (BFS + fonds) ; formats : `parse_juri_xml` (XML DILA) et `_json_payloads` (JSON) dans `core.py`/`ingest.py` |
-| Moniteur | `backend/app/routers/pipeline.py` (lit `pipeline_state/logs/processed_archives`) + `frontend/app/pipeline/page.tsx` |
+| Calculateur juridique (815-9 / 1469) | `backend/app/routers/calculateur.py` + `frontend/app/calculateur/page.tsx` |
+| Radar des pièges | `/api/stats/pieges` (`routers/stats.py`) + `frontend/app/pieges/page.tsx` |
+| Export de documents (Dire à Notaire) | `frontend/lib/dossier.ts` (Markdown / Word .doc / impression) |
+| Débit/concurrence GLM | `pipeline/core.py` (`AdaptiveLimiter`, `BatchWriter`) + flags `--concurrency`/`--max-chars` de `pipeline/ingest.py` + config à chaud (`app_config`, GET/PUT `/api/pipeline/config`) |
+| Recherche plein texte (FTS5) | `backend/app/database.py` (`ensure_fts` : index + triggers + rebuild) + `services/query.py` (`_fts_search_ids`, repli LIKE) |
+| Sources Open Data | `pipeline/dila.py` (BFS + tri + fonds) ; formats : `parse_juri_xml` (XML DILA) et `_json_payloads` (JSON) dans `core.py`/`ingest.py` |
+| DLQ / relance des échecs | table `failed_decisions` + `record_failure()`/`read_config()` (core.py) + `drain_failed` (ingest.py) + POST `/api/pipeline/retry-failed` + CLI `retry-failed` |
+| Moniteur / santé | `backend/app/routers/pipeline.py` + `/api/health` (main.py) + `frontend/app/pipeline/page.tsx` + dot navbar (`header.tsx`) |
+| Mode démo | `backend/app/routers/demo.py` (`is_demo=true`) + `components/demo-banner.tsx` |
 
 ## Pièges connus
 
 - **Nommage Pydantic** : les champs `*_pct` du schéma doivent correspondre EXACTEMENT aux
   kwargs des routers (deux bugs `pc_taux_accorde`/`pc_taux_accorde_pct` déjà corrigés —
-  le smoke test du point 1 les détecte).
+  `pytest tests -q` les détecte).
 - **Stats agrégées en Python** (chargement des décisions filtrées) : correct jusqu'à
   ~50 k décisions ; à l'échelle, passer sur agrégats SQL/JSONB (Postgres via `JURISDIVORCE_DB`).
 - **CORS** : regex `http://(localhost|127\.0\.0\.1):\d+` — couvre tout port local, rien d'autre.
@@ -94,3 +92,10 @@ python -m pipeline.ingest status --db /tmp/test.db
   — jamais de `json.loads` brut.
 - **Troncature** : `smart_truncate` préserve en-tête + motifs + dispositif ; ne PAS tronquer
   par la fin brute (les montants de l'état liquidatif sont dans les derniers paragraphes).
+- **BatchWriter** : `task_done()` doit être appelé **par item** (pas par lot) sinon
+  `queue.join()` n'aboutit jamais (deadlock).
+- **FTS5** : ne JAMAIS splitter le SQL des triggers sur `;` (BEGIN…END en contiennent) —
+  utiliser la liste `FTS_STATEMENTS` ; `executescript()` n'existe pas sur une connexion
+  SQLAlchemy. Rebuild automatique si compte `decisions_fts` ≠ `decisions`.
+- **null vs 0** : `montant_accorde = 0` réservé aux demandes REJETE (règle prompt n°4 +
+  `norm_amount` + save_decision) ; agrégats toujours sur valeurs non-NULL.

@@ -89,3 +89,54 @@ total du re-skin, aucun conflit de peer deps sous Node 26.
 le CORS v1 fixé sur :3000 bloquait les fetch. **Décision** :
 `allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+"`. **Pourquoi** : tolère tout port
 local, refuse le reste (dépôt public à terme).
+
+## 15. BatchWriter : une seule file d'écriture, lots de 25 (mission V3)
+**Contexte** : avec 40 workers GLM en parallèle + l'API qui lit, SQLite renvoyait des
+`database is locked` potentiels et commitait une fois par décision. **Décision** : les workers
+déposent leurs JSON extraits dans une `asyncio.Queue` ; un unique task consommateur écrit des
+lots de 25 décisions en une transaction. **Pourquoi** : sérialise les écritures (WAL +
+busy_timeout en complément), réduit le nombre de commits, aucun verrou croisé. Piège corrigé :
+`task_done()` par **item** (pas par lot) sinon `queue.join()` deadloque.
+
+## 16. DLQ `failed_decisions` + relance (mission V3)
+**Contexte** : un échec GLM final (4 tentatives) perdait la décision (simple log ERROR).
+**Décision** : table `failed_decisions` (id, texte tronqué, erreur, tentatives) ; bouton
+« Relancer les échecs » dans `/pipeline` (drapeau `retry_failed` dans `pipeline_state`, drainé
+par le worker) + CLI `retry-failed`. **Pourquoi** : aucune décision n'est perdue ; la relance
+fonctionne même après crash, et sans redémarrer une campagne complète.
+
+## 17. Normalisation juridictions/régimes à l'écriture (mission V3)
+**Contexte** : le LLM peut renvoyer « CA Paris », « Cour d'appel de PARIS »… → doublons dans
+le comparatif inter-cours. **Décision** : `normalize_juridiction()` (37 villes canoniques,
+détection « appel »/« CA ») et `normalize_regime()` appliquées dans `save_decision` — les
+données sont propres au repos, pas à la lecture. **Pourquoi** : corriger à l'écriture coûte
+une fois ; à la lecture, chaque requête paierait.
+
+## 18. null vs 0 : règle contractuelle prompt + code (mission V3)
+**Contexte** : GLM pouvait répondre `0` pour un montant inconnu, polluant toutes les moyennes.
+**Décision** : règle n°4 du prompt (null par défaut, `0` réservé à `montant_accorde` d'une
+demande REJETE), `norm_amount()` (négatif/non-numérique → NULL) et contrainte appliquée dans
+`save_decision`. **Pourquoi** : la sémantique des agrégats (montant moyen perdu vs obtenu)
+dépend entièrement de cette distinction.
+
+## 19. Calculateur légal : formules statiques couplées aux stats réelles (mission V3)
+**Contexte** : demande d'un calculateur art. 815-9 et art. 1469 « couplé à la jurisprudence ».
+**Décision** : les formules légales sont codées en dur (aucun LLM à l'exécution) ; les
+paramètres jurisprudentiels (abattement médian de la cour, taux de rejet par nature) sont
+calculés sur la base filtrée ; alerte prescription quinquennale (>60 mois). **Pourquoi** :
+déterministe, 0 token, explicable ; la base apporte le « dans votre cour, c'est X % ».
+
+## 20. Recherche plein texte FTS5 avec triggers + rebuild (V4)
+**Contexte** : la recherche `q=` en LIKE ilike 4 colonnes était lente et sans pertinence.
+**Décision** : table virtuelle `decisions_fts` (id UNINDEXED, resume, resume_peda) tenue par
+3 triggers, reconstruite automatiquement si le compte diverge ; `q=` tente FTS (AND de phrases
+quotées) puis repli LIKE. Pièges corrigés : `executescript()` absent sur connexion SQLAlchemy
+et split `;` qui casse les triggers. **Pourquoi** : recherche instantanée sans service externe ;
+le repli LIKE garantit zéro régression.
+
+## 21. CI GitHub Actions backend + frontend (V4)
+**Contexte** : aucune vérification automatisée entre les commits. **Décision** : workflow
+`.github/workflows/ci.yml` — deps backend+pipeline → seed → pytest → dry-run pipeline inline
+(archive synthétique : 3 fichiers lus, 1 conservée) ; frontend npm ci → build.
+**Pourquoi** : le run rouge du premier essai (openai manquant) a montré la valeur ; la CI est
+le filet qui protège la reprise par un autre agent.

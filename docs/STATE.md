@@ -1,7 +1,7 @@
 # ÉTAT DU PROJET — snapshot pour reprise par un agent
 
 *Dernière mise à jour : 2026-11-19 (mission V3 : robustesse + fonctionnalités métier) · dépôt `galaxiel/jurisdivorce-analytics` (public, `main`)*
-*Lire aussi : `AGENTS.md` (règles + commandes) et `docs/DECISIONS.md` (pourquoi des choix).*
+*Lire aussi : `AGENTS.md` (règles + commandes), `docs/DECISIONS.md` (pourquoi des choix) et [`GUIDE_UTILISATION.md`](../GUIDE_UTILISATION.md) (+ PDF) pour le manuel utilisateur.*
 
 ## Stack
 
