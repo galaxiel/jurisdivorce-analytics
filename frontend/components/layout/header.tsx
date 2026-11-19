@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Calculator, Compass, Library, Radio, Scale, ShieldAlert } from "lucide-react";
+import { BarChart3, Calculator, Compass, Home, Library, Radio, Scale, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealth } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -49,6 +49,7 @@ export function Header() {
               pathname === "/" ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
+            <Home className="h-4 w-4" />
             <span className="hidden md:inline">Accueil</span>
           </Link>
           {LINKS.map(({ href, label, icon: Icon }) => {
