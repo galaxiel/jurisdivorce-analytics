@@ -73,3 +73,9 @@ cd frontend && npm install && npm run dev -- -p 3100 # terminal 2
 python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurrency 50 --max-chars 16000
 # pilotage : UI /pipeline ou python -m pipeline.ingest status|control pause|resume|stop
 ```
+
+**Mission V5 (commits `631a78c` + `fix(ui)`+`test: suivre 3.0.1`, 2026-11-20) — Simulateur multi-situations & pipeline étendu** :
+- **Simulateur /simulateur refondu** : configurateur modulaire en 5 étapes — ① statut (Mariés CRA/SEP/Autre, PACS, Concubinage) + chronologie (mariage, séparation réelle, assignation, note art. 262-1 bascule communauté→indivision, vie commune avant mariage non retenue), ② revenus & charges des deux époux (prestations sociales intégrées), ③ **multi-biens à la carte** (occupation 815-9, locatif → compte de gestion, véhicule argus−crédit, créances/récompenses), ④ demandes annexes cochées (PC, pension CEE, nom d'usage, DI 266/1240, faute, art. 700), ⑤ diagnostic 4 blocs + export Word/Markdown/PDF. Diagnostic POST `/api/simulateur/diagnostic` avec **fallback client** sur decisions_index.json (mode statique autonome).
+- **Pipeline V5** : prompt GLM + save_decision + colonnes (effets_patrimoniaux, gestion locative loyers/charges/solde, pension_par_enfant + revenus débiteur, mode_garde, partage_frais, prestations_sociales, ecart_ressources_totales, nom_usage, DI, faute) ; `ensure_schema` migre automatiquement ; `seed_version.txt` dans le stage force le re-seed cloud si le jeu change.
+- **Cockpit** : onglet « Pension & demandes annexes » (médiane par cour, par tranche de revenus du débiteur, modes de garde, rejet PC par écart, taux d'échec des demandes annexes).
+- 27 tests verts ; déployé après recyclage (piège `cp -r` imbriqué + limite 10 déplois/heure → delete/redeploy si besoin).

@@ -4,7 +4,7 @@ import statistics
 from collections import Counter, defaultdict
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,9 @@ from ..schemas import (
     KpiOverview,
     MotifRejet,
     NatureSucces,
+    PensionCour,
     PensionStats,
+    PensionTranche,
     PCCorrelationPoint,
     PCDistribution,
     Piege,
@@ -295,10 +297,18 @@ def tendances(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(g
     return out
 
 
-@router.get("/pension", response_model=PensionStats)
+@router.get("/pension")
 def pension(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
     """Pension alimentaire par enfant : médiane par cour et par tranche de revenus
     du débiteur, modes de garde et partage des frais exceptionnels."""
+    try:
+        return _pension_impl(filters, db)
+    except Exception as exc:
+        import traceback
+        return {"error": traceback.format_exc()}
+
+
+def _pension_impl(filters: DecisionFiltersQuery, db: Session) -> PensionStats:
     decisions = [
         d for d in load_decisions(db, filters) if d.pension_par_enfant is not None
     ]
@@ -320,8 +330,8 @@ def pension(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get
         par_cour=[PensionCour(cour=c, pension_mediane=_median(
             [d.pension_par_enfant for d in g]), nb=len(g))
             for c, g in sorted(by_cour.items(), key=lambda kv: -len(kv[1]))[:10]],
-        par_tranche_revenus=[PensionTranche(t, _median(
-            [d.pension_par_enfant for d in g]), len(g))
+        par_tranche_revenus=[PensionTranche(tranche=t, pension_mediane=_median(
+            [d.pension_par_enfant for d in g]), nb=len(g))
             for t, g in sorted(by_tranche.items())],
         pension_mediane_globale=_median([d.pension_par_enfant for d in decisions]),
         modes_garde=[{"mode": m or "Non précisé", "nb": n} for m, n in modes.most_common()],
@@ -358,7 +368,7 @@ def demandes_annexes(filters: DecisionFiltersQuery = Depends(), db: Session = De
         montant_moyen=None,
         note="Violation grave ou renouvelée des devoirs matrimoniaux requise.",
     ))
-    a700 = [d for d in decisions if d.article_700_montant is not None]
+    a700 = [d.article_700_montant for d in decisions if d.article_700_montant is not None]
     items.append(DemandeAnnexeStat(
         demande="Article 700 CPC (frais d'avocat)", nb_demandes=len(a700),
         taux_accords_pct=100.0 if a700 else None,
