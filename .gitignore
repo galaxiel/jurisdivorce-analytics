@@ -21,3 +21,6 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 archives/
+
+# Déploiement ZCode Sites (stage + lien de site)
+.zcode-site/
