@@ -78,6 +78,7 @@ class Decision(Base):
     raw_text: Mapped[Optional[str]] = mapped_column(Text)
     extracted_json: Mapped[Optional[str]] = mapped_column(Text)
     text_md5: Mapped[Optional[str]] = mapped_column(String)
+    is_demo: Mapped[Optional[bool]] = mapped_column(Boolean)
     created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now())
 
     recompenses: Mapped[List["Recompense"]] = relationship(

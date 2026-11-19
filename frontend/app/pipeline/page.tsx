@@ -1,13 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Coins, Database, FileArchive, Gauge, Loader2, Pause, Play, Square } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Coins, Database, FileArchive, Gauge, Loader2, Pause, Play, RefreshCw, Save, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { KpiCard } from "@/components/analytics/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { postPipelineControl, usePipelineArchives, usePipelineLogs, usePipelineState } from "@/lib/api";
+import {
+  postPipelineControl,
+  postRetryFailed,
+  putPipelineConfig,
+  useBenchmark,
+  usePipelineArchives,
+  usePipelineConfig,
+  usePipelineLogs,
+  usePipelineState,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /* Vue 5 — Moniteur du pipeline : avancement archives, file GLM, logs, tokens. */
@@ -15,7 +26,11 @@ export default function PipelinePage() {
   const state = usePipelineState();
   const logs = usePipelineLogs();
   const archives = usePipelineArchives();
+  const config = usePipelineConfig();
+  const benchmark = useBenchmark();
   const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState<{ max_concurrency: string; model: string; max_chars: string } | null>(null);
+  const [cfgSaved, setCfgSaved] = useState(false);
 
   async function control(action: "pause" | "resume" | "stop") {
     setBusy(true);
@@ -23,6 +38,31 @@ export default function PipelinePage() {
       await postPipelineControl(action);
     } catch {
       /* le moniteur reflète l'erreur via le polling */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryFailed() {
+    setBusy(true);
+    try {
+      await postRetryFailed();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveConfig() {
+    if (!cfg) return;
+    setBusy(true);
+    try {
+      await putPipelineConfig({
+        max_concurrency: Number(cfg.max_concurrency),
+        model: cfg.model,
+        max_chars: Number(cfg.max_chars),
+      });
+      setCfgSaved(true);
+      setTimeout(() => setCfgSaved(false), 2500);
     } finally {
       setBusy(false);
     }
@@ -56,6 +96,9 @@ export default function PipelinePage() {
           <Button size="sm" variant="outline" disabled={busy || s?.status !== "paused"} onClick={() => control("resume")}>
             <Play className="mr-1 h-3.5 w-3.5" /> Reprise
           </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={retryFailed} title="Relancer les décisions en échec (DLQ)">
+            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Relancer les échecs
+          </Button>
           <Button size="sm" variant="destructive" disabled={busy || s?.status === "idle"} onClick={() => control("stop")}>
             <Square className="mr-1 h-3.5 w-3.5" /> Stop
           </Button>
@@ -75,14 +118,85 @@ export default function PipelinePage() {
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <KpiCard label="Archives traitées / total" value={`${s?.archives_done ?? 0} / ${s?.archives_total ?? 0}`} />
+        <KpiCard label="Fichiers XML/JSON lus" value={(s?.files_read ?? 0).toLocaleString("fr-FR")} />
         <KpiCard label="Décisions parcourues" value={(s?.decisions_scanned ?? 0).toLocaleString("fr-FR")} />
         <KpiCard label="Conservées par le filtre" value={(s?.decisions_kept ?? 0).toLocaleString("fr-FR")} tone="success" />
         <KpiCard label="Analysées par GLM" value={(s?.decisions_analyzed ?? 0).toLocaleString("fr-FR")} tone="primary" />
-        <KpiCard label="Échecs" value={(s?.decisions_failed ?? 0).toLocaleString("fr-FR")} tone="destructive" />
+        <KpiCard label="Échecs (DLQ)" value={(s?.decisions_failed ?? 0).toLocaleString("fr-FR")} tone="destructive" />
         <KpiCard label="Tokens aujourd'hui" value={(s?.tokens_today ?? 0).toLocaleString("fr-FR")} hint="Quota Zhipu : 300 M/jour" />
         <KpiCard label="Vitesse" value={`${s?.vitesse_par_minute ?? 0}/min`} tone="neutral" />
+      </div>
+
+      {/* Chantier 1.6 : configuration à chaud + Chantier 2.4 : benchmark */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Configuration du worker (appliquée à chaud)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Concurrence max</Label>
+                <Input
+                  className="h-9 text-sm" type="number" min={1} max={100}
+                  value={cfg?.max_concurrency ?? config.data?.max_concurrency ?? 25}
+                  onChange={(e) => setCfg({ ...(cfg ?? { model: "", max_chars: "" }), max_concurrency: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Modèle GLM</Label>
+                <Input
+                  className="h-9 text-sm" placeholder="glm-4-flash"
+                  value={cfg?.model ?? config.data?.model ?? ""}
+                  onChange={(e) => setCfg({ ...(cfg ?? { max_concurrency: "", max_chars: "" }), model: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Budget caractères/décision</Label>
+                <Input
+                  className="h-9 text-sm" type="number" min={4000}
+                  value={cfg?.max_chars ?? config.data?.max_chars ?? 48000}
+                  onChange={(e) => setCfg({ ...(cfg ?? { max_concurrency: "", model: "" }), max_chars: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={saveConfig} disabled={busy}>
+                <Save className="mr-1.5 h-3.5 w-3.5" /> Appliquer sans redémarrer
+              </Button>
+              {cfgSaved && <span className="text-xs text-success">✓ Le worker relit cette table à chaque décision.</span>}
+              {config.error && <span className="text-xs text-destructive">{config.error}</span>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gauge className="h-4 w-4 text-primary" /> Benchmark de performance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Liste 100 décisions :</span>{" "}
+              <b className="tabular-nums">{benchmark.data?.db_list_100_ms ?? "—"} ms</b>
+            </div>
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Agrégats cockpit :</span>{" "}
+              <b className="tabular-nums">{benchmark.data?.stats_overview_ms ?? "—"} ms</b>
+            </div>
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Taille de la base :</span>{" "}
+              <b className="tabular-nums">{benchmark.data?.db_size_mb ?? "—"} Mo</b>
+            </div>
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Vitesse ingestion :</span>{" "}
+              <b className="tabular-nums">{benchmark.data?.vitesse_par_minute ?? "—"}/min</b>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">

@@ -10,14 +10,20 @@ import type {
   DecisionFilters,
   DecisionList,
   Facets,
+  Benchmark,
+  HealthStatus,
   KpiOverview,
   MotifRejet,
   NatureSucces,
+  OccupationCalcResult,
   PCCorrelationPoint,
   PCDistribution,
+  Piege,
+  PipelineConfig,
   PipelineLog,
   PipelineState,
   PreuveSucces,
+  RecompenseCalcResult,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -131,6 +137,58 @@ export function usePipelineLogs(refreshKey = 0) {
 
 export function usePipelineArchives(refreshKey = 0) {
   return usePolling<ArchiveInfo[]>("/api/pipeline/archives?limit=60", 6000, refreshKey);
+}
+
+export function usePipelineConfig(refreshKey = 0) {
+  return useApi<PipelineConfig>("/api/pipeline/config", refreshKey);
+}
+
+export async function putPipelineConfig(cfg: PipelineConfig): Promise<PipelineConfig> {
+  return request<PipelineConfig>("/api/pipeline/config", {
+    method: "PUT",
+    body: JSON.stringify(cfg),
+  });
+}
+
+export async function postRetryFailed(): Promise<{ failed_decisions: number; flag_posed: boolean; note: string }> {
+  return request("/api/pipeline/retry-failed", { method: "POST", body: "{}" });
+}
+
+export function useBenchmark(refreshKey = 0) {
+  return usePolling<Benchmark>("/api/pipeline/benchmark", 8000, refreshKey);
+}
+
+export function usePieges() {
+  return useApi<Piege[]>("/api/stats/pieges");
+}
+
+export function useHealth() {
+  return usePolling<HealthStatus>("/api/health", 30000);
+}
+
+export async function postOccupationCalc(req: {
+  juridiction: string;
+  valeur_locative_mensuelle: number;
+  date_debut: string;
+  date_fin: string;
+  quote_part_autres_pct: number;
+}): Promise<OccupationCalcResult> {
+  return request<OccupationCalcResult>("/api/calculateur/occupation", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export async function postRecompenseCalc(req: {
+  valeur_bien_avant_travaux: number;
+  valeur_bien_actuelle: number;
+  montant_travaux: number;
+  nature: "amelioration" | "entretien";
+}): Promise<RecompenseCalcResult> {
+  return request<RecompenseCalcResult>("/api/calculateur/recompense", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 export async function postPipelineControl(action: "pause" | "resume" | "stop"): Promise<PipelineState> {

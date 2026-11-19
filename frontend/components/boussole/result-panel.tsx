@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, FileDown, Info, Lightbulb, Printer, Target, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileDown, FileText, Info, Lightbulb, Printer, Target, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { REGIME_LABELS, type BoussoleFormState, type BoussoleReport } from "@/lib/types";
+import { exportDossier, type DossierInput } from "@/lib/dossier";
 import { formatEur, formatPct } from "@/lib/utils";
 
 /* Étape 4 — Le Dashboard Prédictif : fourchettes, checklist de preuves, alertes pièges,
@@ -96,11 +97,43 @@ export function ResultPanel({
     URL.revokeObjectURL(url);
   }
 
+  /* Chantier 2.2 : « Dire à Notaire / Note pour mon Avocat » sourcé par les arrêts similaires */
+  function notaire(): DossierInput {
+    return {
+      titre: "Projet de « Dire à Notaire » — Simulation liquidation-partage",
+      situation: [
+        { label: "Juridiction compétente", value: form.juridiction },
+        { label: "Régime matrimonial", value: REGIME_LABELS[form.regime_matrimonial] ?? form.regime_matrimonial },
+        { label: "Durée du mariage / enfants", value: `${form.duree_mariage_annees} ans · ${form.nombre_enfants} enfant(s)` },
+        { label: "Occupation exclusive", value: `${form.mois_occupation} mois par ${form.occupant === "MOI" ? "vous" : "votre conjoint"} · valeur locative ${formatEur(form.valeur_locative_mensuelle)}/mois` },
+        ...(form.heritage_injecte ? [{ label: "Héritage injecté dans le bien", value: formatEur(form.heritage_injecte) }] : []),
+      ],
+      demandes: [
+        ...(f ? [{ label: "Indemnité d'occupation (médiane observée)", value: `${formatEur(f.mediane)} (min ${formatEur(f.min)} / max ${formatEur(f.max)}) sur ${f.mois} mois` }] : []),
+        ...(report.chances_travaux ? [{ label: "Récompense pour travaux", value: `chances de succès ${formatPct(report.chances_travaux.taux_pct)} avec « ${report.chances_travaux.preuve_retenue} »` }] : []),
+        ...(report.prestation_compensatoire ? [{ label: "Prestation compensatoire (médiane observée)", value: formatEur(report.prestation_compensatoire.capital_mediane) }] : []),
+      ],
+      references: report.jumelles.slice(0, 5).map((j) => ({
+        juridiction: j.juridiction ?? "",
+        date: j.date_decision ?? "",
+        rg: null,
+        resume: j.resume_3_lignes ?? "",
+      })),
+      pieces: report.checklist_preuves.length
+        ? report.checklist_preuves.map((c) => `${c.preuve} (présente dans ${c.frequence_pct} % des dossiers gagnants comparables)`)
+        : ["Factures nominatives au nom du demandeur", "Relevés bancaires personnels traçant les paiements", "Estimation de valeur locative datée de la séparation", "Titre de propriété mentionnant les quotes-parts"],
+      notes: report.notes,
+    };
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between no-print">
         <h2 className="text-xl font-bold">Rapport prédictif statistique</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => exportDossier(notaire(), "doc")}>
+            <FileText className="mr-1.5 h-4 w-4" /> Dire à Notaire (Word)
+          </Button>
           <Button variant="outline" size="sm" onClick={downloadDossier}>
             <FileDown className="mr-1.5 h-4 w-4" /> Dossier (Markdown)
           </Button>

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +14,17 @@ if DB_PATH.startswith("postgres"):
     engine = create_engine(DB_PATH, pool_pre_ping=True)
 else:
     engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record):
+    """WAL + busy_timeout : élimine les 'database is locked' entre worker et API."""
+    if not DB_PATH.startswith("postgres"):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.execute("PRAGMA busy_timeout=10000")
+        cur.close()
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -87,14 +98,36 @@ CREATE TABLE IF NOT EXISTS processed_archives (
     error TEXT,
     processed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS failed_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id TEXT,
+    text_truncated TEXT,
+    error TEXT,
+    attempts INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS app_config (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_pipeline_logs_id ON pipeline_logs(id DESC);
 """
 
+# Colonnes ajoutées a posteriori sur les tables pipeline (migrations légères)
+PIPELINE_MIGRATION_COLUMNS = {
+    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0"},
+}
+
 
 def ensure_pipeline_tables() -> None:
-    """Crée les tables du moniteur d'ingestion (état, logs, manifest d'archives)."""
+    """Crée/migre les tables du moniteur (état, logs, manifest, DLQ, config à chaud)."""
     from sqlalchemy import text
 
     with engine.begin() as conn:
         for stmt in filter(None, (s.strip() for s in PIPELINE_SCHEMA_SQL.split(";"))):
             conn.execute(text(stmt))
+        for table, cols in PIPELINE_MIGRATION_COLUMNS.items():
+            existing = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}
+            for col, coltype in cols.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"))

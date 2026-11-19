@@ -20,6 +20,7 @@ from ..schemas import (
     NatureSucces,
     PCCorrelationPoint,
     PCDistribution,
+    Piege,
     PreuveSucces,
 )
 from ..services.query import load_decisions, load_recompenses
@@ -189,6 +190,51 @@ def top_motifs_rejet(filters: DecisionFiltersQuery = Depends(), db: Session = De
               if r.statut == "REJETE" and r.motif_echec]
     counts = Counter(m.strip(" .") for m in motifs if m.strip())
     return [MotifRejet(motif=m, nb_cas=n) for m, n in counts.most_common(5)]
+
+
+@router.get("/pieges", response_model=List[Piege])
+def pieges(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    """Radar des pièges : 10 principaux motifs de rejet, % des échecs, montant moyen
+    perdu et 3 arrêts illustratifs chacun."""
+    recs = load_recompenses(db, load_decisions(db, filters))
+    rejected = [r for r in recs if r.statut == "REJETE" and r.motif_echec]
+    total_rejets = len(rejected)
+
+    # Détail décisionnel pour les arrêts illustratifs
+    ids = {r.decision_id for r in rejected}
+    decisions_by_id = {}
+    for chunk_start in range(0, len(ids), 500):
+        chunk = list(ids)[chunk_start:chunk_start + 500]
+        for d in db.query(Decision).filter(Decision.id.in_(chunk)).all():
+            decisions_by_id[d.id] = d
+
+    groups: dict[str, list] = defaultdict(list)
+    for r in rejected:
+        groups[r.motif_echec.strip(" .")].append(r)
+
+    out = []
+    for motif, group in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:10]:
+        perdus = [r.montant_reclame for r in group if r.montant_reclame is not None]
+        exemples = []
+        for r in group[:3]:
+            d = decisions_by_id.get(r.decision_id)
+            if d:
+                exemples.append({
+                    "id": d.id,
+                    "juridiction": d.juridiction,
+                    "date_decision": d.date_decision,
+                    "numero_rg": d.numero_rg,
+                    "montant_perdu": r.montant_reclame,
+                    "resume": (d.resume_3_lignes or "")[:220],
+                })
+        out.append(Piege(
+            motif=motif,
+            nb_cas=len(group),
+            pct_rejets=round(100 * len(group) / total_rejets, 1) if total_rejets else 0.0,
+            montant_moyen_perdu=_mean(perdus),
+            exemples=exemples,
+        ))
+    return out
 
 
 @router.get("/recompenses-par-preuve", response_model=List[PreuveSucces])

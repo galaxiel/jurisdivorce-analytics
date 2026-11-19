@@ -1,8 +1,11 @@
-"""Moniteur du pipeline d'ingestion : état temps réel, logs, contrôle pause/reprise/stop.
+"""Moniteur du pipeline d'ingestion : état temps réel, logs, contrôle pause/reprise/stop,
+configuration à chaud, DLQ « relancer les échecs » et benchmark de performance.
 
 Le pipeline écrit son heartbeat dans pipeline_state / pipeline_logs / processed_archives
 (voir pipeline/ingest.py) ; ces endpoints lisent ces tables et permettent le contrôle.
 """
+import os
+import time
 from datetime import datetime
 from typing import List, Optional
 
@@ -10,8 +13,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..schemas import ArchiveInfo, PipelineControl, PipelineLog, PipelineState
+from ..database import DB_PATH, get_db
+from ..models import Decision
+from ..schemas import (
+    ArchiveInfo,
+    Benchmark,
+    PipelineConfig,
+    PipelineControl,
+    PipelineLog,
+    PipelineState,
+)
+from ..schemas import DecisionFiltersQuery
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
@@ -19,7 +31,14 @@ DEFAULTS = dict(
     status="idle", mode=None, current_archive=None, archives_done=0, archives_total=0,
     decisions_scanned=0, decisions_kept=0, decisions_analyzed=0, decisions_failed=0,
     tokens_today=0, day_key=None, queue_size=0, started_at=None, updated_at=None,
+    files_read=0, retry_failed=0,
 )
+
+CONFIG_DEFAULTS = {
+    "max_concurrency": os.getenv("MAX_CONCURRENCY", "25"),
+    "model": os.getenv("JURISDIVORCE_MODEL", "glm-4-flash"),
+    "max_chars": os.getenv("MAX_CHARS", "48000"),
+}
 
 
 def _state_row(db: Session) -> dict:
@@ -77,3 +96,88 @@ def control(cmd: PipelineControl, db: Session = Depends(get_db)):
     )
     db.commit()
     return state(db)
+
+
+# ------------------------------------------------ Configuration à chaud
+@router.get("/config", response_model=PipelineConfig)
+def get_config(db: Session = Depends(get_db)):
+    rows = db.execute(text("SELECT key, value FROM app_config")).all()
+    overrides = {k: v for k, v in rows}
+    merged = {k: overrides.get(k, v) for k, v in CONFIG_DEFAULTS.items()}
+    return PipelineConfig(
+        max_concurrency=int(merged["max_concurrency"]),
+        model=merged["model"],
+        max_chars=int(merged["max_chars"]),
+    )
+
+
+@router.put("/config", response_model=PipelineConfig)
+def put_config(cfg: PipelineConfig, db: Session = Depends(get_db)):
+    """Écrit dans app_config : le worker relit cette table à chaque décision (à chaud)."""
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    for key, value in (
+        ("max_concurrency", cfg.max_concurrency),
+        ("model", cfg.model),
+        ("max_chars", cfg.max_chars),
+    ):
+        if value is None:
+            continue
+        db.execute(
+            text("INSERT OR REPLACE INTO app_config (key, value) VALUES (:k, :v)"),
+            {"k": key, "v": str(value)},
+        )
+    db.execute(
+        text("INSERT INTO pipeline_logs (ts, level, message) VALUES (:ts, :level, :msg)"),
+        {"ts": now, "level": "INFO", "msg": f"Configuration à chaud : {cfg.model_dump(exclude_none=True)}"},
+    )
+    db.commit()
+    return get_config(db)
+
+
+# ------------------------------------------------ DLQ : relancer les échecs
+@router.post("/retry-failed")
+def retry_failed(db: Session = Depends(get_db)):
+    """Pose le drapeau retry_failed : le worker (s'il tourne) redraine failed_decisions
+    à sa prochaine itération. Sinon, utiliser `python -m pipeline.ingest retry-failed`."""
+    n = db.execute(text("SELECT COUNT(*) FROM failed_decisions")).scalar() or 0
+    db.execute(text("UPDATE pipeline_state SET retry_failed = 1, updated_at = :now WHERE id = 1"),
+               {"now": datetime.utcnow().isoformat(timespec="seconds")})
+    db.commit()
+    return {"failed_decisions": n, "flag_posed": True,
+            "note": "Le worker redraine les échecs s'il tourne ; sinon lancez : python -m pipeline.ingest retry-failed"}
+
+
+# ------------------------------------------------ Benchmark de performance
+@router.get("/benchmark", response_model=Benchmark)
+def benchmark(db: Session = Depends(get_db)):
+    t0 = time.perf_counter()
+    db.query(Decision).limit(100).all()
+    t1 = time.perf_counter()
+    from ..routers.stats import overview as stats_overview
+
+    stats_overview(DecisionFiltersQuery(), db)
+    t2 = time.perf_counter()
+
+    s = _state_row(db)
+    try:
+        db_size_mb = round(os.path.getsize(DB_PATH) / 1e6, 2)
+    except OSError:
+        db_size_mb = 0.0
+
+    started = s["started_at"]
+    vitesse = None
+    if s["status"] == "running" and started:
+        try:
+            minutes = max((datetime.utcnow() - datetime.fromisoformat(started)).total_seconds() / 60.0, 0.1)
+            vitesse = round(s["decisions_analyzed"] / minutes, 1)
+        except ValueError:
+            pass
+
+    return Benchmark(
+        decisions=db.query(Decision).count(),
+        db_list_100_ms=round((t1 - t0) * 1000, 1),
+        stats_overview_ms=round((t2 - t1) * 1000, 1),
+        db_size_mb=db_size_mb,
+        vitesse_par_minute=vitesse,
+        tokens_today=s["tokens_today"],
+    )

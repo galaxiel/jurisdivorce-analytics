@@ -128,6 +128,67 @@ def repair_json(raw: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# NORMALISATION JURIDICTIONS / RÉGIMES (anti-doublons dans les comparatifs)
+# ---------------------------------------------------------------------------
+_APPEL_CITIES = [
+    "Aix-en-Provence", "Ajaccio", "Amiens", "Angers", "Basse-Terre", "Besançon",
+    "Bordeaux", "Caen", "Cayenne", "Chambéry", "Clermont-Ferrand", "Colmar",
+    "Dijon", "Douai", "Fort-de-France", "Grenoble", "Limoges", "Lille", "Lyon",
+    "Metz", "Montpellier", "Nancy", "Nantes", "Nouméa", "Orléans", "Papeete",
+    "Paris", "Pau", "Perpignan", "Poitiers", "Reims", "Rennes", "Riom", "Rouen",
+    "Toulouse", "Tours", "Troyes", "Versailles",
+]
+
+
+def normalize_juridiction(name: Optional[str]) -> Optional[str]:
+    """« CA Paris », « COUR D'APPEL DE PARIS », « cour d'appel, Paris, France » →
+    « Cour d'appel de Paris » (forme canonique, anti-doublons graphiques)."""
+    if not name or not name.strip():
+        return name
+    n = normalize_text(name)
+    if "appel" not in n and not re.match(r"^\s*ca\b", n):
+        return name.strip()
+    for city in _APPEL_CITIES:
+        if normalize_text(city) in n:
+            prefix = "d'" if normalize_text(city).startswith(("a", "e", "i", "o", "u")) else "de "
+            return f"Cour d'appel {prefix}{city}"
+    return name.strip()
+
+
+def normalize_regime(name: Optional[str]) -> Optional[str]:
+    """Unifie les régimes matrimoniaux vers les codes de l'énumération."""
+    if not name:
+        return name
+    n = normalize_text(name)
+    if "universelle" in n:
+        return "COMMUNAUTE_UNIVERSELLE"
+    if "participation" in n:
+        return "PARTICIPATION_AUX_ACQUETS"
+    if "separation" in n:
+        return "SEPARATION_DE_BIENS"
+    if "indivision" in n:
+        return "INDIVISION"
+    if "reduite" in n or "acquet" in n:
+        return "COMMUNAUTE_REDUITE_AUX_ACQUETS"
+    if "communaute" in n:
+        return "COMMUNAUTE_REDUITE_AUX_ACQUETS"
+    return name.strip()
+
+
+def norm_amount(v: Any) -> Optional[float]:
+    """Montant financier : nombre pur ou None. Négatif / non numérique → None.
+    `0` est réservé aux demandes explicitement rejetées (appliqué dans save_decision)."""
+    v = _num(v)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f < 0 else f
+
+
+# ---------------------------------------------------------------------------
 # CLASSIFICATION DE PREUVE (même heuristique que backend/app/services/classify.py)
 # ---------------------------------------------------------------------------
 _NEGATIVE = re.compile(r"absence de (facture|justificatif|preuve)s?|sans facture|aucun(e)? (justificatif|facture|preuve|pièce)|défaut de preuve", re.I)
@@ -206,16 +267,45 @@ CREATE TABLE IF NOT EXISTS processed_archives (
     status TEXT DEFAULT 'pending', decisions_found INTEGER DEFAULT 0,
     decisions_analyzed INTEGER DEFAULT 0, error TEXT, processed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS failed_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id TEXT, text_truncated TEXT, error TEXT,
+    attempts INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS app_config (
+    key TEXT PRIMARY KEY, value TEXT
+);
 """
+
+# Colonnes ajoutées a posteriori (base créée avant ces champs)
+PIPELINE_MIGRATION_COLUMNS = {
+    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0"},
+}
+
+
+def _migrate_pipeline_columns(conn: sqlite3.Connection) -> None:
+    for table, cols in PIPELINE_MIGRATION_COLUMNS.items():
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for col, coltype in cols.items():
+            if col not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
 
 
 def connect_db(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 30000")
+    _apply_pragmas(conn)
     conn.executescript(SCHEMA_SQL)
     conn.executescript(PIPELINE_TABLES_SQL)
+    _migrate_pipeline_columns(conn)
     return conn
+
+
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """WAL + busy_timeout : zéro 'database is locked' entre worker et API."""
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=10000")
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +406,10 @@ def _bool(v: Any) -> Optional[bool]:
 
 
 def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text: str, ex: dict):
-    """Aplanit le JSON LLM enrichi (v2) en colonnes requêtables + réclamations."""
+    """Aplanit le JSON LLM enrichi (v2) en colonnes requêtables + réclamations.
+
+    Règles : juridiction/régime normalisés ; montants négatifs/non numériques → NULL ;
+    `montant_accorde = 0` réservé aux demandes explicitement rejetées."""
     meta = ex.get("metadata") or {}
     ctx = ex.get("contexte_familial") or {}
     biens = ex.get("biens_litigieux") or {}
@@ -344,25 +437,26 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 raw_text, extracted_json, text_md5
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                decision_id, "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"), meta.get("juridiction"),
+                decision_id, "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"),
+                normalize_juridiction(meta.get("juridiction")),
                 meta.get("chambre"), meta.get("date_decision"),
-                ctx.get("type_procedure"), ctx.get("regime_matrimonial"),
+                ctx.get("type_procedure"), normalize_regime(ctx.get("regime_matrimonial")),
                 _num(ctx.get("duree_mariage_annees")), _num(ctx.get("nombre_enfants")), _num(ctx.get("age_epoux_moyen")),
-                _bool(biens.get("bien_immobilier_principal")), _num(biens.get("valeur_bien_principal")),
+                _bool(biens.get("bien_immobilier_principal")), norm_amount(biens.get("valeur_bien_principal")),
                 _bool(biens.get("entreprises_societes")), _bool(biens.get("comptes_epargne")),
                 _bool(occ.get("demandee")), _bool(occ.get("accordee")),
-                _num(occ.get("montant_mensuel_base_valeur_locative") or occ.get("valeur_locative_mensuelle_retenue")),
-                _num(occ.get("pourcentage_abattement_accorde") or occ.get("taux_abattement_precarite_pct")),
-                _num(occ.get("montant_mensuel_final")), _num(occ.get("duree_mois_retenue")),
-                _num(occ.get("montant_total_accorde")),
+                norm_amount(occ.get("montant_mensuel_base_valeur_locative") or occ.get("valeur_locative_mensuelle_retenue")),
+                norm_amount(occ.get("pourcentage_abattement_accorde") or occ.get("taux_abattement_precarite_pct")),
+                norm_amount(occ.get("montant_mensuel_final")), _num(occ.get("duree_mois_retenue")),
+                norm_amount(occ.get("montant_total_accorde")),
                 occ.get("motifs_rejet_ou_reduction") or occ.get("motif_refus_ou_modulation"),
                 _bool(pc.get("demandee")), _bool(pc.get("accordee")), pc.get("forme"),
-                _num(pc.get("montant_capital_accorde") or pc.get("montant_accorde")),
-                _num(pc.get("montant_demande_epoux_A")), _num(pc.get("montant_propose_epoux_B")),
-                _num(pc.get("ecart_revenus_mensuel")),
+                norm_amount(pc.get("montant_capital_accorde") or pc.get("montant_accorde")),
+                norm_amount(pc.get("montant_demande_epoux_A")), norm_amount(pc.get("montant_propose_epoux_B")),
+                norm_amount(pc.get("ecart_revenus_mensuel")),
                 json.dumps(criteres, ensure_ascii=False) if criteres else None,
-                _num(pc.get("montant_rente_mensuelle")), _num(pc.get("duree_rente_mois")),
-                _num(cout.get("article_700_accorde") or cout.get("article_700_montant")),
+                norm_amount(pc.get("montant_rente_mensuelle")), _num(pc.get("duree_rente_mois")),
+                norm_amount(cout.get("article_700_accorde") or cout.get("article_700_montant")),
                 cout.get("partie_condamnee_depens") or cout.get("partage_depens"),
                 _num(cout.get("delai_procedure_estime_mois")),
                 strat.get("resume_decision_3_lignes"),
@@ -377,6 +471,11 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
             if not isinstance(r, dict):
                 continue
             preuves = r.get("preuves_determinantes") or []
+            statut = r.get("statut")
+            # null vs 0 : `0` réservé aux demandes explicitement rejetées
+            accorde = 0.0 if statut == "REJETE" else norm_amount(
+                r.get("montant_accorde")
+            )
             conn.execute(
                 """INSERT INTO recompenses (decision_id, categorie, demandeur, montant_reclame,
                    montant_accorde, statut, preuve_type, preuve_clef_retenue, motif_echec,
@@ -384,8 +483,8 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     decision_id, r.get("nature") or r.get("categorie"), r.get("demandeur"),
-                    _num(r.get("montant_reclame") or r.get("montant_demande")),
-                    _num(r.get("montant_accorde")), r.get("statut"),
+                    norm_amount(r.get("montant_reclame") or r.get("montant_demande")),
+                    accorde, statut,
                     classify_proof(r.get("preuve_clef_retenue"), r.get("cause_echec"), r.get("motif_echec")),
                     r.get("preuve_clef_retenue"),
                     r.get("cause_echec") or r.get("motif_echec"),
@@ -421,8 +520,9 @@ class PipelineStateWriter:
         if self._conn is None:
             self._conn = sqlite3.connect(self.db_path, timeout=30)
             self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA busy_timeout = 30000")
+            _apply_pragmas(self._conn)
             self._conn.executescript(PIPELINE_TABLES_SQL)
+            _migrate_pipeline_columns(self._conn)
         return self._conn
 
     def init(self, mode: str, archives_total: int = 0) -> None:
@@ -541,3 +641,71 @@ class AdaptiveLimiter:
                 if time.monotonic() > self._paused_until and self.size < self.max_size:
                     self.size = min(self.max_size, self.size + max(1, self.max_size // 10))
                     self._cv.notify_all()
+
+    async def set_target(self, new_max: int) -> None:
+        """Réglage à chaud de la concurrence cible (table app_config, depuis /pipeline)."""
+        async with self._cv:
+            self.max_size = max(1, new_max)
+            self.size = min(self.size, self.max_size)
+            self._cv.notify_all()
+
+
+def read_config(conn: sqlite3.Connection, defaults: dict) -> dict:
+    """Lit app_config (réglages à chaud depuis /pipeline) par-dessus les défauts .env."""
+    try:
+        rows = conn.execute("SELECT key, value FROM app_config").fetchall()
+    except sqlite3.OperationalError:
+        return dict(defaults)
+    merged = dict(defaults)
+    for r in rows:
+        merged[r["key"]] = r["value"]
+    return merged
+
+
+def record_failure(conn: sqlite3.Connection, decision_id: str, text: str, error: str, attempts: int) -> None:
+    """Dead Letter Queue : la décision n'est jamais perdue, elle attend une relance."""
+    with conn:
+        conn.execute(
+            "INSERT INTO failed_decisions (decision_id, text_truncated, error, attempts) VALUES (?,?,?,?)",
+            (decision_id, (text or "")[:12000], str(error)[:300], attempts),
+        )
+
+
+class BatchWriter:
+    """File d'écriture dédiée : les workers déposent, UN SEUL task écrit par lots de 25
+    décisions (une seule transaction) → zéro contention SQLite même à 50 workers."""
+
+    def __init__(self, conn: sqlite3.Connection, state: "PipelineStateWriter",
+                 batch_size: int = 25, flush_interval: float = 2.0):
+        self.conn = conn
+        self.state = state
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self._closed = False
+
+    async def put(self, decision_id: str, md5: str, text: str, extracted: dict) -> None:
+        await self.queue.put((decision_id, md5, text, extracted))
+
+    async def run(self) -> None:
+        while True:
+            items = [await self.queue.get()]
+            deadline = time.monotonic() + self.flush_interval
+            while len(items) < self.batch_size and time.monotonic() < deadline:
+                try:
+                    items.append(await asyncio.wait_for(self.queue.get(), timeout=0.5))
+                except asyncio.TimeoutError:
+                    break
+            try:
+                with self.conn:  # une seule transaction pour tout le lot
+                    for decision_id, md5, text, extracted in items:
+                        save_decision(self.conn, decision_id, md5, text, extracted)
+                self.state.bump(decisions_analyzed=len(items))
+            except Exception as exc:
+                self.state.bump(decisions_failed=len(items))
+                self.state.log("ERROR", f"Écriture lot de {len(items)} refusée : {exc}")
+            for _ in items:  # task_done par item (sinon queue.join() n'aboutit jamais)
+                self.queue.task_done()
+
+    async def flush_remaining(self) -> None:
+        await self.queue.join()

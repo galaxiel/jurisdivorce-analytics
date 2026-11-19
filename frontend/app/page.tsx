@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BarChart3, Compass, Library, Radio } from "lucide-react";
+import { ArrowRight, BarChart3, Calculator, Compass, Library, Radio, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,16 +23,28 @@ const MODULES = [
     text: "Questionnaire en 4 étapes : fourchettes observées, checklist des preuves indispensables, alertes pièges et dossier de synthèse exportable.",
   },
   {
+    href: "/calculateur",
+    icon: Calculator,
+    title: "Calculateur juridique",
+    text: "Art. 815-9 : indemnité d'occupation avec abattement médian de votre cour et alerte prescription. Art. 1469 : profit subsistant vs dépense faite.",
+  },
+  {
     href: "/decisions",
     icon: Library,
     title: "Explorer la Jurisprudence",
     text: "Recherche plein texte et filtres multicritères, cartes lisibles d'un coup d'œil avec badges financiers, export CSV/JSON.",
   },
   {
+    href: "/pieges",
+    icon: ShieldAlert,
+    title: "Radar des Pièges",
+    text: "Les 10 motifs de rejet les plus fréquents : % des échecs, montant moyen perdu et arrêts illustratifs pour chaque piège.",
+  },
+  {
     href: "/pipeline",
     icon: Radio,
     title: "Moniteur du Pipeline",
-    text: "Avancement du téléchargement des archives Open Data (CAPP · CASS · TJ), file d'attente GLM Flash, tokens consommés, logs en direct.",
+    text: "Avancement du téléchargement des archives Open Data (CAPP · CASS · TJ), file d'attente GLM Flash, tokens consommés, config à chaud.",
   },
 ];
 

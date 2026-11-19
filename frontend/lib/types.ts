@@ -311,11 +311,86 @@ export interface PipelineState {
   decisions_kept: number;
   decisions_analyzed: number;
   decisions_failed: number;
+  files_read: number;
   tokens_today: number;
   queue_size: number;
   started_at: string | null;
   updated_at: string | null;
   vitesse_par_minute: number | null;
+}
+
+export interface PipelineConfig {
+  max_concurrency: number;
+  model: string;
+  max_chars: number;
+}
+
+export interface Benchmark {
+  decisions: number;
+  db_list_100_ms: number;
+  stats_overview_ms: number;
+  db_size_mb: number;
+  vitesse_par_minute: number | null;
+  tokens_today: number;
+}
+
+export interface HealthStatus {
+  status: string;
+  db_ok: boolean;
+  disk_free_gb: number;
+  decisions: number;
+  worker_status: string;
+  version: string;
+}
+
+/* ------------------------------------------------ Chantier 2 : métier */
+export interface Piege {
+  motif: string;
+  nb_cas: number;
+  pct_rejets: number;
+  montant_moyen_perdu: number | null;
+  exemples: {
+    id: string;
+    juridiction: string | null;
+    date_decision: string | null;
+    numero_rg: string | null;
+    montant_perdu: number | null;
+    resume: string;
+  }[];
+}
+
+export interface OccupationCalcResult {
+  mois: number;
+  montant_brut: number;
+  abattement_median_pct: number | null;
+  montant_net: number;
+  prescription: {
+    depassement_mois: number;
+    mois_recouvrables: number;
+    montant_recuperable: number;
+    alerte: boolean;
+  };
+  comparables: {
+    id: string;
+    juridiction: string | null;
+    date_decision: string | null;
+    numero_rg: string | null;
+    abattement_pct: number | null;
+    montant_mensuel_final: number | null;
+    montant_total: number | null;
+    duree_mois: number | null;
+  }[];
+  echantillon: number;
+}
+
+export interface RecompenseCalcResult {
+  plus_value: number;
+  profit_subsistant: number;
+  depense_faite: number;
+  regle: string;
+  taux_rejet_amelioration_pct: number | null;
+  taux_rejet_entretien_pct: number | null;
+  alertes: string[];
 }
 
 export interface PipelineLog {

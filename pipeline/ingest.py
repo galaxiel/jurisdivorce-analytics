@@ -33,17 +33,26 @@ import zipfile
 from typing import Iterable, List, Optional, Tuple
 
 import httpx
-from openai import AsyncOpenAI, RateLimitError
-from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import APIStatusError, AsyncOpenAI, RateLimitError
+
+try:  # config .env optionnelle (ZHIPU_API_KEY, MAX_CONCURRENCY, MODEL…)
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 from .core import (
     AdaptiveLimiter,
+    BatchWriter,
     PipelineStateWriter,
     connect_db,
     decision_filter,
     extract_id,
     extract_text,
     parse_juri_xml,
+    read_config,
+    record_failure,
     repair_json,
     save_decision,
     smart_truncate,
@@ -70,6 +79,7 @@ Règles de traitement :
 1. Si une information est absente du texte, indique `null`. Ne devine ni n'invente jamais d'information.
 2. Exprime tous les montants monétaires en nombres purs (ex: 1500.50 et non "1 500,50 €").
 3. Garde une synthèse neutre, factuelle et orientée sur le raisonnement de la décision.
+4. N'utilise JAMAIS 0 par défaut : tout montant non explicitement chiffré dans la décision est `null`. `0` est strictement réservé au champ `montant_accorde` d'une demande explicitement rejetée.
 
 Schéma JSON de sortie :
 {
@@ -113,26 +123,35 @@ def _json_payloads(content: bytes) -> Iterable[dict]:
                 yield item
 
 
-def iter_decisions_from_archive(path: str) -> Iterable[Tuple[str, str]]:
-    """Archive .tar.gz / .zip / .json contenant du JSON ou du XML DILA (TEXTE_JURI_JUDI)."""
+def iter_decisions_from_archive(path: str, counters: Optional[dict] = None) -> Iterable[Tuple[str, str]]:
+    """Archive .tar.gz / .zip / .json (XML DILA ou JSON) — STREAMING `r|*` : l'archive
+    n'est jamais chargée entièrement en RAM. counters['files_read'] compte le nombre
+    EXACT de fichiers XML/JSON lus (vs decisions_scanned = textes exploitables)."""
+    def mark() -> None:
+        if counters is not None:
+            counters["files_read"] += 1
+
     if path.endswith(".zip"):
         with zipfile.ZipFile(path) as archive:
             for member in archive.namelist():
                 if member.endswith("/"):
                     continue
+                mark()
                 yield from _decisions_from_member(archive.read(member), member)
         return
     if path.endswith(".json"):
+        mark()
         with open(path, "rb") as file:
             yield from _decisions_from_member(file.read(), os.path.basename(path))
         return
-    with tarfile.open(path, "r:*") as archive:
-        for member in archive.getmembers():
+    with tarfile.open(path, mode="r|*") as archive:
+        for member in archive:
             if not member.isfile():
                 continue
             file = archive.extractfile(member)
             if file is None:
                 continue
+            mark()
             yield from _decisions_from_member(file.read(), member.name)
 
 
@@ -155,11 +174,12 @@ def _decisions_from_member(content: bytes, name: str) -> Iterable[Tuple[str, str
 # ---------------------------------------------------------------------------
 client = AsyncOpenAI(api_key=ZHIPU_API_KEY, base_url=ZHIPU_BASE_URL) if ZHIPU_API_KEY else None
 
+MAX_ATTEMPTS = 5
 
-@retry(wait=wait_exponential(multiplier=2, min=2, max=60), stop=stop_after_attempt(4), reraise=True)
-async def call_llm(text: str) -> Tuple[dict, int]:
+
+async def call_llm(text: str, model: str) -> Tuple[dict, int]:
     response = await client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Voici le texte de la décision de justice :\n\n{text}"},
@@ -185,25 +205,53 @@ async def wait_if_paused(state: PipelineStateWriter) -> bool:
 
 
 async def analyze_decision(conn, state: PipelineStateWriter, limiter: AdaptiveLimiter,
-                           decision_id: str, text: str, md5: str, max_chars: int) -> bool:
+                           writer: BatchWriter, decision_id: str, text: str, md5: str,
+                           defaults: dict) -> bool:
+    """Analyse une décision : config à chaud + backoff 429/503 + DLQ sur échec final.
+
+    L'écriture ne se fait PAS ici : la décision réussie part dans la BatchWriter
+    (un seul task d'écriture, lots de 25) → zéro 'database is locked'."""
     if not await wait_if_paused(state):
         state.log("WARN", f"Arrêt demandé : {decision_id} abandonnée.")
         return False
+
+    cfg = read_config(conn, defaults)  # réglages à chaud (table app_config, /pipeline)
+    target = int(cfg.get("max_concurrency") or MAX_CONCURRENCY)
+    if target != limiter.max_size:
+        await limiter.set_target(target)
+        state.log("INFO", f"Concurrence ajustée à chaud : {target} requêtes simultanées.")
+    model = cfg.get("model") or MODEL
+    max_chars = int(cfg.get("max_chars") or MAX_CHARS)
+
     truncated = smart_truncate(text, max_chars)
-    try:
-        extracted, tokens = await call_llm(truncated)
-        save_decision(conn, decision_id, md5, truncated, extracted)
-        state.bump(decisions_analyzed=1, tokens_today=tokens)
-        return True
-    except RateLimitError:
-        # 429 : on réduit la concurrence de moitié ; tenacity retentera la décision.
-        new_size = limiter.on_rate_limited()
-        state.log("WARN", f"429 reçu de Zhipu : concurrence réduite à {new_size} requêtes simultanées.")
-        raise  # laissé à tenacity (backoff exponentiel)
-    except Exception as exc:
+    last_exc: Optional[Exception] = None
+    attempt = 0
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            extracted, tokens = await call_llm(truncated, model)
+            await writer.put(decision_id, md5, truncated, extracted)
+            state.bump(tokens_today=tokens)
+            return True
+        except (RateLimitError, APIStatusError) as exc:
+            status = getattr(exc, "status_code", None)
+            if isinstance(exc, RateLimitError) or status in (429, 503):
+                new_size = limiter.on_rate_limited()
+                state.log("WARN", f"{status or 429} Zhipu : concurrence → {new_size} ; "
+                                  f"backoff {min(90, 2 ** attempt * 2):.0f} s (tentative {attempt}/{MAX_ATTEMPTS})")
+                await asyncio.sleep(min(90.0, 2.0 * (2 ** attempt)))
+                last_exc = exc
+            else:
+                last_exc = exc
+                break  # erreur non transitoire (400…) : DLQ direct
+        except Exception as exc:  # timeout, réseau, JSON invalide…
+            await asyncio.sleep(min(20.0, 2.0 * attempt))
+            last_exc = exc
+
+    if last_exc is not None:
+        record_failure(conn, decision_id, truncated, last_exc, attempt=attempt)
         state.bump(decisions_failed=1)
-        state.log("ERROR", f"Échec GLM {decision_id} : {exc}")
-        return False
+        state.log("ERROR", f"Décision {decision_id} en file d'échecs (DLQ) : {last_exc}")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -252,17 +300,44 @@ async def run_campaign(args) -> None:
                archives_total=len(pending))
     print(f"{len(pending)} archive(s) à traiter ({len(archives) - len(pending)} déjà en manifest).")
 
-    # 2) Parcours des archives → filtre → file de travail (concurrence adaptative 429)
+    # 2) Parcours des archives → filtre → file de travail (concurrence adaptative + writer dédié)
     limiter = AdaptiveLimiter(args.concurrency or MAX_CONCURRENCY)
-    max_chars = args.max_chars or MAX_CHARS
+    defaults = {
+        "max_concurrency": args.concurrency or MAX_CONCURRENCY,
+        "model": MODEL,
+        "max_chars": args.max_chars or MAX_CHARS,
+    }
     grow_task = asyncio.create_task(limiter.grow_loop())
+    writer = BatchWriter(conn, state)
+    writer_task = asyncio.create_task(writer.run())
 
     async def bounded(decision_id: str, text: str, md5: str) -> bool:
         await limiter.acquire()
         try:
-            return await analyze_decision(conn, state, limiter, decision_id, text, md5, max_chars)
+            return await analyze_decision(conn, state, limiter, writer, decision_id, text, md5, defaults)
         finally:
             await limiter.release()
+
+    async def drain_failed() -> int:
+        """Redraine la DLQ : relance les décisions en échec (bouton /pipeline ou CLI)."""
+        rows = conn.execute(
+            "SELECT id, decision_id, text_truncated FROM failed_decisions ORDER BY id LIMIT 200"
+        ).fetchall()
+        ok = 0
+        for row in rows:
+            md5 = hashlib.md5(row["text_truncated"].encode("utf-8")).hexdigest()
+            if await analyze_decision(conn, state, limiter, writer, row["decision_id"], row["text_truncated"], md5, defaults):
+                with conn:
+                    conn.execute("DELETE FROM failed_decisions WHERE id = ?", (row["id"],))
+                ok += 1
+            else:
+                with conn:
+                    conn.execute("UPDATE failed_decisions SET attempts = attempts + 1 WHERE id = ?", (row["id"],))
+        if rows:
+            state.log("INFO", f"DLQ drainée : {ok}/{len(rows)} décision(s) relancée(s) avec succès.")
+        with conn:
+            conn.execute("UPDATE pipeline_state SET retry_failed = 0 WHERE id = 1")
+        return ok
 
     total_analyzed = 0
     try:
@@ -271,6 +346,11 @@ async def run_campaign(args) -> None:
                 state.log("WARN", "Arrêt demandé : campagne interrompue.")
                 break
             state.heartbeat(current_archive=archive["url"], queue_size=len(pending) - index)
+
+            # Drapeau posé par le bouton « Relancer les échecs » de /pipeline
+            flag = conn.execute("SELECT retry_failed FROM pipeline_state WHERE id = 1").fetchone()
+            if flag and flag["retry_failed"]:
+                await drain_failed()
 
             try:
                 if args.local:
@@ -285,15 +365,16 @@ async def run_campaign(args) -> None:
 
             kept: List[Tuple[str, str, str]] = []
             scanned = 0
+            counters = {"files_read": 0}
             try:
-                for decision_id, text in iter_decisions_from_archive(path):
+                for decision_id, text in iter_decisions_from_archive(path, counters):
                     scanned += 1
                     keep, reason = decision_filter(text)
                     if not keep:
                         continue
                     md5 = hashlib.md5(text.encode("utf-8")).hexdigest()
                     if conn.execute("SELECT 1 FROM decisions WHERE text_md5 = ? LIMIT 1", (md5,)).fetchone():
-                        continue  # dédoublonnage
+                        continue  # élimination des doublons
                     if conn.execute("SELECT 1 FROM decisions WHERE id = ? LIMIT 1", (decision_id,)).fetchone():
                         continue
                     kept.append((decision_id, text, md5))
@@ -303,8 +384,10 @@ async def run_campaign(args) -> None:
                 state.bump(archives_done=1)
                 continue
 
-            state.bump(decisions_scanned=scanned, decisions_kept=len(kept))
-            state.log("INFO", f"{os.path.basename(path)} : {scanned} décisions parcourues, {len(kept)} conservées.")
+            state.bump(decisions_scanned=scanned, decisions_kept=len(kept),
+                       files_read=counters["files_read"])
+            state.log("INFO", f"{os.path.basename(path)} : {counters['files_read']} fichiers XML/JSON lus, "
+                              f"{scanned} décisions exploitables, {len(kept)} retenues par le pré-filtre.")
 
             if args.analyze and not args.dry_run:
                 results = await asyncio.gather(*(bounded(d, t, m) for d, t, m in kept))
@@ -319,6 +402,11 @@ async def run_campaign(args) -> None:
                 os.remove(path)  # économise le disque une fois l'archive traitée
     finally:
         grow_task.cancel()
+        try:
+            await writer.flush_remaining()  # écrit le dernier lot incomplet
+        except Exception as exc:
+            state.log("ERROR", f"Flush final de la file d'écriture : {exc}")
+        writer_task.cancel()
         final = state.control_status()
         state.heartbeat(status="idle" if final != "stopped" else "stopped", queue_size=0)
         state.log("INFO", f"Campagne terminée : {total_analyzed} décisions analysées au total.")
@@ -326,6 +414,49 @@ async def run_campaign(args) -> None:
         state.close()
 
     print(f"Terminé — {total_analyzed} décisions analysées. Base : {db_path}")
+
+
+async def retry_failed_cli(db_path: str) -> None:
+    """Sub-command `retry-failed` : redraine la DLQ sans campagne complète."""
+    if not ZHIPU_API_KEY:
+        sys.exit("ZHIPU_API_KEY requis pour relancer les échecs.")
+    conn = connect_db(os.path.abspath(db_path))
+    state = PipelineStateWriter(os.path.abspath(db_path))
+    limiter = AdaptiveLimiter(MAX_CONCURRENCY)
+    defaults = {"max_concurrency": MAX_CONCURRENCY, "model": MODEL, "max_chars": MAX_CHARS}
+    writer = BatchWriter(conn, state)
+    writer_task = asyncio.create_task(writer.run())
+    try:
+        rows = conn.execute("SELECT COUNT(*) n FROM failed_decisions").fetchone()
+        print(f"{rows['n']} décision(s) en échec dans la DLQ.")
+        drained = await _drain_standalone(conn, state, limiter, writer, defaults)
+        print(f"{drained} décision(s) relancée(s) avec succès.")
+    finally:
+        await writer.flush_remaining()
+        writer_task.cancel()
+        conn.close()
+        state.close()
+
+
+async def _drain_standalone(conn, state, limiter, writer, defaults) -> int:
+    rows = conn.execute(
+        "SELECT id, decision_id, text_truncated FROM failed_decisions ORDER BY id LIMIT 500"
+    ).fetchall()
+    ok = 0
+    for row in rows:
+        md5 = hashlib.md5(row["text_truncated"].encode("utf-8")).hexdigest()
+        if await analyze_decision(conn, state, limiter, writer, row["decision_id"], row["text_truncated"], md5, defaults):
+            with conn:
+                conn.execute("DELETE FROM failed_decisions WHERE id = ?", (row["id"],))
+            ok += 1
+        else:
+            with conn:
+                conn.execute("UPDATE failed_decisions SET attempts = attempts + 1 WHERE id = ?", (row["id"],))
+    if rows:
+        state.log("INFO", f"DLQ drainée (CLI) : {ok}/{len(rows)} relancée(s).")
+    with conn:
+        conn.execute("UPDATE pipeline_state SET retry_failed = 0 WHERE id = 1")
+    return ok
 
 
 def show_status(db_path: str) -> None:
@@ -385,9 +516,14 @@ def main() -> None:
     ctrl_p.add_argument("--db", default=DEFAULT_DB)
     ctrl_p.set_defaults(func=lambda a: set_control(a.db, a.action))
 
+    retry_p = sub.add_parser("retry-failed", help="Relancer les décisions en échec (DLQ)")
+    retry_p.add_argument("--db", default=DEFAULT_DB)
+
     args = parser.parse_args()
     if args.command == "run":
         asyncio.run(args.func(args))
+    elif args.command == "retry-failed":
+        asyncio.run(retry_failed_cli(args.db))
     else:
         args.func(args)
 

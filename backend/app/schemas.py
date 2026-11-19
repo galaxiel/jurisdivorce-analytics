@@ -234,3 +234,73 @@ class ArchiveInfo(BaseModel):
 
 class PipelineControl(BaseModel):
     action: str = Field(pattern="^(pause|resume|stop)$")
+
+
+class PipelineConfig(BaseModel):
+    """Configuration réglable à chaud depuis /pipeline (table app_config)."""
+
+    max_concurrency: Optional[int] = Field(None, ge=1, le=100)
+    model: Optional[str] = Field(None, max_length=60)
+    max_chars: Optional[int] = Field(None, ge=4000, le=200000)
+
+
+class Benchmark(BaseModel):
+    decisions: int
+    db_list_100_ms: float
+    stats_overview_ms: float
+    db_size_mb: float
+    vitesse_par_minute: Optional[float]
+    tokens_today: int
+
+
+class HealthStatus(BaseModel):
+    status: str
+    db_ok: bool
+    disk_free_gb: float
+    decisions: int
+    worker_status: str
+    version: str
+
+
+# ---------------------------------------------------------------- Chantier 2
+class Piege(BaseModel):
+    motif: str
+    nb_cas: int
+    pct_rejets: float
+    montant_moyen_perdu: Optional[float]
+    exemples: List[Dict]
+
+
+class OccupationCalcRequest(BaseModel):
+    juridiction: str
+    valeur_locative_mensuelle: float = Field(ge=0, le=10000)
+    date_debut: str
+    date_fin: str
+    quote_part_autres_pct: float = Field(50, ge=0, le=100)
+
+
+class OccupationCalcResult(BaseModel):
+    mois: int
+    montant_brut: float
+    abattement_median_pct: Optional[float]
+    montant_net: float
+    prescription: Dict
+    comparables: List[Dict]
+    echantillon: int
+
+
+class RecompenseCalcRequest(BaseModel):
+    valeur_bien_avant_travaux: float = Field(ge=0)
+    valeur_bien_actuelle: float = Field(ge=0)
+    montant_travaux: float = Field(ge=0)
+    nature: str = Field("amelioration", pattern="^(amelioration|entretien)$")
+
+
+class RecompenseCalcResult(BaseModel):
+    plus_value: float
+    profit_subsistant: float
+    depense_faite: float
+    regle: str
+    taux_rejet_amelioration_pct: Optional[float]
+    taux_rejet_entretien_pct: Optional[float]
+    alertes: List[str]

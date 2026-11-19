@@ -82,8 +82,32 @@ async def list_archives(client: httpx.AsyncClient, base_url: str,
     archives = list(found.values())
     if max_archives:
         archives = archives[:max_archives]
-    log(f"[INDEX] {len(archives)} archives découvertes sur {base_url}")
+
+    # Tri par date (dans le nom de fichier) puis taille — HEAD pour obtenir la taille
+    await _enrich_sizes(client, archives, log)
+    archives.sort(key=_archive_sort_key, reverse=True)
+    total_mb = round(sum(a.get("size_bytes") or 0 for a in archives) / 1e6, 1)
+    log(f"[INDEX] {len(archives)} archives découvertes sur {base_url} ({total_mb} Mo au total, "
+        f"triées par date puis taille)")
     return archives
+
+
+_TIMESTAMP = re.compile(r"(\d{8})-?(\d{4})?")
+
+
+def _archive_sort_key(archive: dict):
+    m = _TIMESTAMP.search(archive["url"])
+    stamp = (m.group(1) + m.group(2)) if m else "0"
+    return (stamp, archive.get("size_bytes") or 0)
+
+
+async def _enrich_sizes(client: httpx.AsyncClient, archives: List[dict], log=print) -> None:
+    for archive in archives:
+        try:
+            response = await client.head(archive["url"], timeout=30, follow_redirects=True)
+            archive["size_bytes"] = int(response.headers.get("content-length", 0) or 0)
+        except Exception:
+            archive["size_bytes"] = 0
 
 
 async def download_archive(client: httpx.AsyncClient, url: str, dest_dir: str, log=print) -> Tuple[str, int]:
