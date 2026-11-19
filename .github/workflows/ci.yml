@@ -15,7 +15,7 @@ jobs:
           python-version: "3.11"
       - name: Installer les dépendances
         run: |
-          pip install -r backend/requirements.txt pytest httpx python-dotenv
+          pip install -r backend/requirements.txt -r pipeline/requirements.txt pytest
       - name: Générer le jeu de démonstration
         working-directory: backend
         run: python -m app.seed
