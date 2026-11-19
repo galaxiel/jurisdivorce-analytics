@@ -21,6 +21,8 @@ export function MotifsRejetChart({ data }: { data: MotifRejet[] }) {
           formatter={(value: any) => [`${value} cas`, "Réclamations rejetées"]}
           labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.full ?? ""}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, maxWidth: 320 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Bar dataKey="nb_cas" fill="hsl(var(--destructive))" radius={[0, 4, 4, 0]} barSize={20} />
       </BarChart>

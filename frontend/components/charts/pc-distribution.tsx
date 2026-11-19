@@ -22,6 +22,8 @@ export function PCDistributionChart({ data }: { data: PCDistribution[] }) {
           formatter={(value: any, name: any) => [`${Number(value).toLocaleString("fr-FR")} €`, String(name)]}
           labelFormatter={(label: any, payload: any) => `Durée ${label} (${payload?.[0]?.payload?.nb ?? 0} décisions)`}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="Capital moyen" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />

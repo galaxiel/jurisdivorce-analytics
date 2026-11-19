@@ -37,6 +37,8 @@ export function PCScatterChart({ data }: { data: PCCorrelationPoint[] }) {
             name === "Durée du mariage" ? [`${value} ans`, name] : name === "PC accordée" ? [`${value} k€`, name] : [value, name]
           }
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         {series.map((s) => (

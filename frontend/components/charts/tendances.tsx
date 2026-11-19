@@ -33,6 +33,8 @@ export function TendancesChart({ data }: { data: TendancePoint[] }) {
           formatter={(value: any, name: any) => [value ?? "—", String(name)]}
           labelFormatter={(label: any, payload: any) => `Année ${label} (${payload?.[0]?.payload?.nb ?? 0} décisions)`}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Line yAxisId="eur" dataKey="PC médiane (k€)" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 2 }} />

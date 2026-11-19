@@ -23,6 +23,8 @@ export function AbattementDistributionChart({ data }: { data: AbattementBucket[]
             item?.payload?.moyenne != null ? `Indemnité moyenne ${item.payload.moyenne} €/mois` : "Décisions",
           ]}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Bar dataKey="nb" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={48} />
       </BarChart>

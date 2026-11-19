@@ -36,6 +36,8 @@ export function NatureSuccessChart({ data }: { data: NatureSucces[] }) {
           }
           labelFormatter={(label: any, payload: any) => `${label} (${payload?.[0]?.payload?.nb ?? 0} réclamations)`}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar yAxisId="eur" dataKey="Réclamé (k€)" fill="hsl(var(--muted-foreground))" radius={[4, 4, 0, 0]} barSize={26} />

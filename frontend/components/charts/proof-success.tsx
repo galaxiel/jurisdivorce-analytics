@@ -32,6 +32,8 @@ export function ProofSuccessChart({ data }: { data: PreuveSucces[] }) {
             `Taux de succès (${item?.payload?.nb ?? 0} réclamations)`,
           ]}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Bar dataKey="taux" radius={[4, 4, 0, 0]} barSize={44}>
           {rows.map((row) => (

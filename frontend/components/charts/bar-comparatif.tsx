@@ -33,6 +33,8 @@ export function BarComparatif({ data }: { data: CourComparatif[] }) {
           }
           labelFormatter={(label: any) => `Cour d'appel : ${label}`}
           contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+          itemStyle={{ color: "hsl(var(--foreground))" }}
         />
         <Bar yAxisId="eur" dataKey="indemnite" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} name="indemnite" />
         <Line yAxisId="pct" dataKey="abattement" stroke="hsl(var(--accent))" strokeWidth={2} dot={{ r: 3 }} name="abattement" />
