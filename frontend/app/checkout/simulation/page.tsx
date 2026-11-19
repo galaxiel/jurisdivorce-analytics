@@ -1,15 +1,15 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEntitlements } from "@/lib/entitlements";
-import { TIER_LABELS } from "@/lib/entitlements";
+import { useEntitlements, TIER_LABELS } from "@/lib/entitlements";
 
 /* Page de simulation de paiement : s'affiche quand STRIPE_SECRET_KEY n'est pas configurée.
    Permet de valider un paiement test en 1 clic et de débloquer immédiatement les résultats. */
-export default function CheckoutSimulationPage() {
+function CheckoutSimulationContent() {
   const searchParams = useSearchParams();
   const { unlock } = useEntitlements();
   const tier = (searchParams.get("tier") ?? "diagnostic_29") as "diagnostic_29" | "pack_avocat_49" | "pass_decisions_19";
@@ -46,5 +46,13 @@ export default function CheckoutSimulationPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function CheckoutSimulationPage() {
+  return (
+    <Suspense fallback={null}>
+      <CheckoutSimulationContent />
+    </Suspense>
   );
 }
