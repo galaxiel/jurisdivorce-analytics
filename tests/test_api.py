@@ -25,7 +25,7 @@ def test_toutes_les_routes_repondent(client):
 def test_health_v3(client):
     h = client.get("/api/health").json()
     assert h["db_ok"] is True
-    assert h["version"] == "3.0"
+    assert h["version"] == "3.0.1"
     assert h["decisions"] > 0
 
 def test_filtres_croises(client):
