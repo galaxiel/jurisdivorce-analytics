@@ -3,6 +3,7 @@
 Docs interactive : http://127.0.0.1:8000/docs
 Lancer : uvicorn app.main:app --reload --port 8000  (depuis backend/)
 """
+import os
 import shutil
 
 from fastapi import Depends, FastAPI
@@ -67,3 +68,13 @@ def health(db=Depends(get_db)):
         "version": "3.0",
     }
     return HealthStatus(**result)
+
+
+# Déploiement web : si un export statique du frontend est présent à côté de app/,
+# FastAPI le sert sur / (un seul process : API + site). Le mount est déclaré EN DERNIER :
+# dans Starlette, un mount "/" placé avant une route la masque.
+STATIC_SITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static_site")
+if os.path.isdir(STATIC_SITE_DIR):
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=STATIC_SITE_DIR, html=True), name="site")
