@@ -47,6 +47,13 @@ et notaires** (loi n° 71-1130 du 31 décembre 1971). Cette plateforme est un ou
 - [ ] Les montants sont-ils présentés comme des observations statistiques (médiane,
       fourchette, percentile) et non comme des droits ?
 
+## Monétisation Freemium (V6)
+
+- Système d'état de déblocage : `lib/entitlements.tsx` (Context React + localStorage, 4 tiers).
+- **Toute modification du simulateur, du calculateur ou des exports doit respecter la Règle d'Or N°5** (formulation statistique, pas de conseil juridique).
+- Les pages `/simulateur` et `/decisions` intègrent le paywall : les fourchettes chiffrées sont floutées pour les users free, visibles pour les tiers payants.
+- Le badge source (navbar) affiche `live` (vert) ou `snapshot` (ambre) selon que l'API répond ou que le fallback statique est actif.
+
 ## Vue d'ensemble (30 secondes)
 
 JurisDivorce Analytics = plateforme d'analyse statistique de la jurisprudence

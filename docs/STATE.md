@@ -79,3 +79,16 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
 - **Pipeline V5** : prompt GLM + save_decision + colonnes (effets_patrimoniaux, gestion locative loyers/charges/solde, pension_par_enfant + revenus débiteur, mode_garde, partage_frais, prestations_sociales, ecart_ressources_totales, nom_usage, DI, faute) ; `ensure_schema` migre automatiquement ; `seed_version.txt` dans le stage force le re-seed cloud si le jeu change.
 - **Cockpit** : onglet « Pension & demandes annexes » (médiane par cour, par tranche de revenus du débiteur, modes de garde, rejet PC par écart, taux d'échec des demandes annexes).
 - 27 tests verts ; déployé après recyclage (piège `cp -r` imbriqué + limite 10 déplois/heure → delete/redeploy si besoin).
+
+**Mission V6 (commits `35e29d1` + `9199186`, 2026-11-20) — conformité juridique + monétisation freemium** :
+- `AGENTS.md` : Règle d'Or N°5 ajoutée (bouclier juridique — interdiction de formulations prescriptives, obligations statistiques, titre exports, LegalDisclaimerFooter).
+- **Freemium** : `lib/entitlements.tsx` (Context + localStorage, 4 tiers free/diagnostic_29/pack_avocat_49/pass_decisions_19, sync par token URL), `components/paywall-overlay.tsx` (blur-md + carte déblocage), `components/legal-disclaimer-footer.tsx` (toutes routes), backend `routers/checkout.py` (Stripe si clé sinon simulation), `/checkout/simulation` page, badge source navbar.
+- **Intégration paywall** : simulateur (tier=free → PaywallOverlay blur fourchettes), /decisions (Pass 19€ pour fiche complète), toggle démo dans /pipeline.
+- `lib/dossier.ts` : titre export conforme Règle d'Or N°5.
+- Déploiement : recyclé (jurisdivorce-ea02), vérifié en ligne ✓.
+
+**Déploiement web — pièges découverts et documentés (V4→V6)** :
+- ZCode Sites ne redémarre PAS le process Python entre les déploiements (hot-swap fichiers seulement) → les correctifs backend ne prennent effet qu'après un recyclage complet (delete + redeploy --new).
+- `$DATA_DIR` persiste par instance → mécanisme `seed_version.txt` dans start.sh pour forcer le re-seed si le jeu de données change.
+- `cp -r src dest` avec dest existant crée un DOSSIER IMBRIQUÉ → toujours `rm -rf dest && cp -r src dest`.
+- La limite ZCode Sites est 10 déplois/hour → planifier les redéploiements en conséquence.

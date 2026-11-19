@@ -272,6 +272,19 @@ d'ingestion — utile pour vérifier que tout reste réactif à mesure que la ba
 
 ## 10. Le mode sombre / clair
 
+### Monétisation Freemium
+
+La plateforme fonctionne en modèle freemium :
+
+- **Gratuit** : Cockpit Global, Calculateur, Radar des Pièges, recherche et résumés dans l'Explorateur, aperçu du diagnostic (nombre d'arrêts similaires, niveau de risque).
+- **Diagnostic Complet (29 €, 30 jours)** : débloque les fourchettes chiffrées, le compte de gestion détaillé, la checklist des preuves et les 5 arrêts similaires complets.
+- **Pack Préparation Avocat (49 €, 30 jours)** : Diagnostic Complet + générateur de dossier exportable (Word/Markdown/PDF) prêt à remettre à votre avocat ou notaire.
+- **Pass Exploration (19 € / 7 jours)** : accès illimité aux fiches décisionnelles complètes dans /decisions.
+
+Le paiement est unique (sans abonnement). En mode démo (sans clé Stripe), la page `/checkout/simulation` permet de tester le déblocage en 1 clic.
+
+## 10. Le mode sombre / clair
+
 Le bouton lune/soleil dans la barre de navigation bascule le thème. Le choix suit d'abord les
 préférences de votre système, puis mémorise votre sélection. Toute la charte est centralisée
 dans `frontend/theme.config.ts` + `app/globals.css` (une seule passe pour la modifier).
