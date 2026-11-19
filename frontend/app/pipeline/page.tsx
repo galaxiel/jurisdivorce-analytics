@@ -74,7 +74,7 @@ export default function PipelinePage() {
     paused: { label: "En pause", variant: "secondary" as const, icon: Pause },
     stopped: { label: "Arrêté", variant: "destructive" as const, icon: Square },
     idle: { label: "Inactif", variant: "outline" as const, icon: Clock },
-  }[s?.status ?? "idle"];
+  }[s?.status ?? "idle"] ?? { label: s?.status ?? "Inactif", variant: "outline" as const, icon: Clock };
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6">
@@ -142,7 +142,13 @@ export default function PipelinePage() {
                 <Input
                   className="h-9 text-sm" type="number" min={1} max={100}
                   value={cfg?.max_concurrency ?? config.data?.max_concurrency ?? 25}
-                  onChange={(e) => setCfg({ ...(cfg ?? { model: "", max_chars: "" }), max_concurrency: e.target.value })}
+                  onChange={(e) =>
+                    setCfg({
+                      max_concurrency: e.target.value,
+                      model: cfg?.model ?? config.data?.model ?? "",
+                      max_chars: cfg?.max_chars ?? String(config.data?.max_chars ?? 48000),
+                    })
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -150,7 +156,13 @@ export default function PipelinePage() {
                 <Input
                   className="h-9 text-sm" placeholder="glm-4-flash"
                   value={cfg?.model ?? config.data?.model ?? ""}
-                  onChange={(e) => setCfg({ ...(cfg ?? { max_concurrency: "", max_chars: "" }), model: e.target.value })}
+                  onChange={(e) =>
+                    setCfg({
+                      max_concurrency: cfg?.max_concurrency ?? String(config.data?.max_concurrency ?? 25),
+                      model: e.target.value,
+                      max_chars: cfg?.max_chars ?? String(config.data?.max_chars ?? 48000),
+                    })
+                  }
                 />
               </div>
               <div className="space-y-1">
@@ -158,7 +170,13 @@ export default function PipelinePage() {
                 <Input
                   className="h-9 text-sm" type="number" min={4000}
                   value={cfg?.max_chars ?? config.data?.max_chars ?? 48000}
-                  onChange={(e) => setCfg({ ...(cfg ?? { max_concurrency: "", model: "" }), max_chars: e.target.value })}
+                  onChange={(e) =>
+                    setCfg({
+                      max_concurrency: cfg?.max_concurrency ?? String(config.data?.max_concurrency ?? 25),
+                      model: cfg?.model ?? config.data?.model ?? "",
+                      max_chars: e.target.value,
+                    })
+                  }
                 />
               </div>
             </div>
@@ -220,7 +238,7 @@ export default function PipelinePage() {
               <TableBody>
                 {(archives.data ?? []).map((a) => (
                   <TableRow key={a.url}>
-                    <TableCell className="max-w-72 truncate font-mono text-xs">{a.url.split("/").pop()}</TableCell>
+                    <TableCell className="max-w-72 truncate font-mono text-xs">{a.url.split(/[\\/]/).pop()}</TableCell>
                     <TableCell><Badge variant="outline">{a.fonds}</Badge></TableCell>
                     <TableCell>
                       <Badge variant={a.status === "done" ? "success" : a.status === "error" ? "destructive" : "secondary"}>

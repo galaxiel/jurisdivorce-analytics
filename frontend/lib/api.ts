@@ -30,7 +30,11 @@ import type {
   DemandesAnnexesStats,
 } from "./types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+/* Same-origin par défaut ("" → fetch relatif /api/...) : en déploiement statique,
+   FastAPI sert le site ET l'API sur la même origine (tunnel Cloudflare inclus),
+   donc aucun souci de CORS. En dev (npm run dev/start sur :3100), next.config.mjs
+   réécrit /api/* vers 127.0.0.1:8000. NEXT_PUBLIC_API_URL reste prioritaire si défini. */
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /* ── Fallback statique : si l'API ne répond pas, bascule silencieuse sur /data/*.json ── */
 export type ApiSource = "live" | "snapshot" | "unknown";
@@ -257,6 +261,15 @@ export function usePipelineArchives(refreshKey = 0) {
 
 export function usePipelineConfig(refreshKey = 0) {
   return useApi<PipelineConfig>("/api/pipeline/config", refreshKey);
+}
+
+/* ------------------------------------------------ Démo */
+export function postDemoSeed() {
+  return request("/api/demo/seed", { method: "POST", body: "{}" });
+}
+
+export function deleteDemo() {
+  return request("/api/demo", { method: "DELETE" });
 }
 
 export async function putPipelineConfig(cfg: PipelineConfig): Promise<PipelineConfig> {

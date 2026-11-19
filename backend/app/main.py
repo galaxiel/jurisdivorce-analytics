@@ -66,6 +66,7 @@ def health(db=Depends(get_db)):
         "db_ok": db_ok,
         "disk_free_gb": disk_free_gb,
         "decisions": db.query(Decision).count(),
+        "synth_demo_count": db.query(Decision).filter(Decision.source == "SYNTHETIQUE_DEMO").count(),
         "worker_status": worker,
         "version": "3.0.1",
         "source": "live",

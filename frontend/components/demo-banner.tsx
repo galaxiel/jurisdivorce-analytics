@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Database, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useApi } from "@/lib/api";
+import { deleteDemo, postDemoSeed, useApi } from "@/lib/api";
 
 /* Chantier 2.4 : mode démo — bandeau si la base est presque vide (< 50 décisions),
    chargement de 50 arrêts réalistes (is_demo) et purge en 1 clic. */
@@ -30,11 +30,11 @@ export function DemoBanner() {
 
   async function load() {
     setBusy(true);
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"}/api/demo/seed`, { method: "POST" });
+    await postDemoSeed();
   }
   async function purge() {
     setBusy(true);
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"}/api/demo`, { method: "DELETE" });
+    await deleteDemo();
   }
 
   return (

@@ -269,6 +269,8 @@ class HealthStatus(BaseModel):
     worker_status: str
     version: str
     source: str = "live"
+    # Nb de décisions encore marquées SYNTHETIQUE_DEMO (jeu de démo seed)
+    synth_demo_count: int = 0
 
 
 # ---------------------------------------------------------------- Chantier 2

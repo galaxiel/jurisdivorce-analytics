@@ -354,6 +354,8 @@ export interface HealthStatus {
   worker_status: string;
   version: string;
   source?: "live" | "snapshot";
+  /** Nb de décisions encore marquées SYNTHETIQUE_DEMO (jeu de démo seed). */
+  synth_demo_count?: number;
 }
 
 /* ------------------------------------------------ Chantier 2 : métier */
