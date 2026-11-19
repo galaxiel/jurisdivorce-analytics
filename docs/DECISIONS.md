@@ -2,6 +2,8 @@
 
 *Chaque entrée : contexte → décision → raison. En ordre chronologique (v1 → v7).*
 
+*(Entrée 26 ajoutée en V7 — régimes matrimoniaux complets.)*
+
 ## 1. SQLite par défaut, Postgres par variable d'environnement
 **Contexte** : cahier des charges « PostgreSQL / SQLite ». **Décision** : SQLite en dev
 (`backend/jurisprudence.db`), `JURISDIVORCE_DB=postgresql://…` bascule sans changer une ligne
@@ -178,3 +180,17 @@ les ombres étaient en dur dans les classes utilitaires et il manquait des fonds
 `text-gradient`, `bg-banner` en `globals.css` ; `Card`/`KpiCard` branchés sur `shadow-card`.
 **Pourquoi** : toute la profondeur visuelle (light + dark) se règle toujours dans les 2 mêmes
 fichiers, sans toucher aux composants.
+
+## 26. Énumération complète des régimes matrimoniaux, connectée de bout en bout (V7)
+**Contexte** : le prompt LLM et `normalize_regime` ne connaissaient pas le « contrat avec clause
+de partage » (parts inégales, préciput, attribution intégrale) → texte brut en base, invisible
+aux filtres (dropdown limité aux libellés connus, « Régime inconnu » sur les cartes) ; le
+simulateur n'avait que 5 statuts et ne filtrait jamais les comparables par régime.
+**Décision** : nouveau code `COMMUNAUTE_AVEC_CLAUSE` ajouté au prompt d'extraction, à
+`normalize_regime` (détection clause/préciput/attribution intégrale/parts inégales, avant le
+« communauté » générique ; « universelle » prioritaire), au seed, aux libellés front
+(`REGIME_LABELS`, CRA rebaptisé « communauté légale / réduite aux acquêts » — depuis 1966 ce
+sont le même régime) ; le simulateur gagne 3 statuts (CU, participation, clause) reliés au code
+régime via `STATUT_REGIME`, et le diagnostic filtre désormais les décisions comparables par
+régime (repli tous-régimes + note si < 8). **Pourquoi** : un régime non reconnu ne doit jamais
+devenir une donnée fantôme ; et les fourchettes doivent être calculées sur le bon régime.

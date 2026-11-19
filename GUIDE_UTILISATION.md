@@ -130,7 +130,12 @@ d'occupation, montant moyen de l'article 700, taux de rejet sans factures.
 comparables de la base.
 
 ### Étape 1 — Situation
-Juridiction (votre cour d'appel régionale), régime matrimonial, durée du mariage, nombre d'enfants.
+Juridiction (votre cour d'appel régionale), statut matrimonial complet : communauté légale /
+réduite aux acquêts (sans contrat ou contrat d'acquêts), **contrat avec clause de partage**
+(parts inégales, préciput, attribution intégrale), communauté universelle, participation aux
+acquêts, séparation de biens, PACS, concubinage. Le diagnostic ne retient que les décisions
+**du même régime** (avec repli tous-régimes si l'échantillon est < 8) ; durée du mariage,
+nombre d'enfants.
 
 ### Étape 2 — Le bien et l'occupation
 Valeur locative mensuelle estimée (une estimation d'agence suffit), durée d'occupation

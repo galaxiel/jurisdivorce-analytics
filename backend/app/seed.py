@@ -27,11 +27,13 @@ JURIDICTIONS = [
     ("Cour d'appel de Montpellier", 45), ("Cour d'appel de Pau", 35),
 ]
 REGIMES = [
-    ("COMMUNAUTE_REDUITE_AUX_ACQUETS", 0.62), ("SEPARATION_DE_BIENS", 0.22),
+    ("COMMUNAUTE_REDUITE_AUX_ACQUETS", 0.58), ("SEPARATION_DE_BIENS", 0.20),
     ("PARTICIPATION_AUX_ACQUETS", 0.10), ("COMMUNAUTE_UNIVERSELLE", 0.06),
+    ("COMMUNAUTE_AVEC_CLAUSE", 0.06),
 ]
 REGIME_FR = {
-    "COMMUNAUTE_REDUITE_AUX_ACQUETS": "communauté réduite aux acquêts",
+    "COMMUNAUTE_REDUITE_AUX_ACQUETS": "communauté légale / réduite aux acquêts",
+    "COMMUNAUTE_AVEC_CLAUSE": "contrat avec clause de partage (parts inégales, préciput, attribution intégrale)",
     "SEPARATION_DE_BIENS": "séparation de biens",
     "PARTICIPATION_AUX_ACQUETS": "participation aux acquêts",
     "COMMUNAUTE_UNIVERSELLE": "communauté universelle",

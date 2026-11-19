@@ -56,7 +56,16 @@ def test_normalize_juridiction_alias_villes_sans_ca():
 def test_normalize_regime():
     assert normalize_regime("Séparation de biens") == "SEPARATION_DE_BIENS"
     assert normalize_regime("communauté réduite aux acquêts") == "COMMUNAUTE_REDUITE_AUX_ACQUETS"
+    assert normalize_regime("communauté légale") == "COMMUNAUTE_REDUITE_AUX_ACQUETS"
+    assert normalize_regime("communauté conventionnelle") == "COMMUNAUTE_REDUITE_AUX_ACQUETS"
+    assert normalize_regime("communauté universelle") == "COMMUNAUTE_UNIVERSELLE"
+    assert normalize_regime("participation aux acquêts") == "PARTICIPATION_AUX_ACQUETS"
     assert normalize_regime("indivision simple") == "INDIVISION"
+    # Contrat avec clause de partage : parts inégales, préciput, attribution intégrale
+    assert normalize_regime("contrat avec clause d'attribution intégrale") == "COMMUNAUTE_AVEC_CLAUSE"
+    assert normalize_regime("communauté avec préciput au profit du conjoint survivant") == "COMMUNAUTE_AVEC_CLAUSE"
+    assert normalize_regime("clause de parts inégales 70/30") == "COMMUNAUTE_AVEC_CLAUSE"
+    assert normalize_regime("communauté universelle avec clause d'attribution intégrale") == "COMMUNAUTE_UNIVERSELLE"
 
 def test_norm_amount():
     assert norm_amount("-5") is None

@@ -16,6 +16,18 @@ router = APIRouter(prefix="/api/simulateur", tags=["simulateur"])
 
 BAREME_PENSION = {1: 0.18, 2: 0.155, 3: 0.135, 4: 0.12, 5: 0.105}  # barème de référence indicatif
 
+# Statut du simulateur → code régime (colonne decisions.regime_matrimonial)
+STATUT_REGIME = {
+    "MARIAGE_CRA": "COMMUNAUTE_REDUITE_AUX_ACQUETS",
+    "MARIAGE_CLAUSE": "COMMUNAUTE_AVEC_CLAUSE",
+    "MARIAGE_CU": "COMMUNAUTE_UNIVERSELLE",
+    "MARIAGE_PA": "PARTICIPATION_AUX_ACQUETS",
+    "MARIAGE_SEP": "SEPARATION_DE_BIENS",
+    "MARIAGE_AUTRE": None,
+    "PACS": "INDIVISION",
+    "CONCUBINAGE": "INDIVISION",
+}
+
 
 def _median(v):
     return round(statistics.median(v), 2) if v else None
@@ -45,12 +57,21 @@ def _months(a: str, b: str) -> int:
 @router.post("/diagnostic", response_model=SimulateurReport)
 def diagnostic(req: SimulateurRequest, db: Session = Depends(get_db)):
     notes: List[str] = []
+    regime = STATUT_REGIME.get(req.statut)
     decisions = db.query(Decision).all()
     decisions = [d for d in decisions if d.juridiction == req.juridiction] or [
         d for d in decisions if d.juridiction
     ]
     if decisions and decisions[0].juridiction != req.juridiction:
         notes.append("Échantillon trop faible pour votre cour : estimations calculées au plan national.")
+    # Restriction aux décisions du même régime matrimonial (avec repli si échantillon < 8)
+    if regime:
+        by_regime = [d for d in decisions if d.regime_matrimonial == regime]
+        if len(by_regime) >= 8:
+            decisions = by_regime
+        else:
+            notes.append("Moins de 8 décisions pour ce régime matrimonial dans l'échantillon : "
+                         "estimations tous régimes confondus.")
 
     # ── Chronologie (art. 262-1 : effets patrimoniaux entre assignation et divorce)
     mois_mariage = _months(req.date_mariage, req.date_separation)
@@ -63,6 +84,7 @@ def diagnostic(req: SimulateurRequest, db: Session = Depends(get_db)):
         "duree_vie_commune_mariage_annees": vie_commune,
         "mois_entre_separation_et_assignation": separe_assign,
         "statut": req.statut,
+        "regime_matrimonial": regime,
     }
     if req.statut == "CONCUBINAGE":
         notes.append("Concubinage : pas de prestation compensatoire ni de pension entre concubins ; "
@@ -76,6 +98,15 @@ def diagnostic(req: SimulateurRequest, db: Session = Depends(get_db)):
                      "(mais avant le divorce) tombent en indivision pour les mariés sous communauté.")
         notes.append("La vie commune ANTÉRIEURE au mariage n'est pas retenue par les juges pour "
                      "le calcul de la prestation compensatoire.")
+        if regime == "COMMUNAUTE_UNIVERSELLE":
+            notes.append("Communauté universelle : la masse commune comprend les biens présents "
+                         "et à venir ; la liquidation s'opère selon les clauses du contrat de mariage.")
+        elif regime == "COMMUNAUTE_AVEC_CLAUSE":
+            notes.append("Contrat avec clause de partage : la clause (parts inégales, préciput, "
+                         "attribution intégrale) prime le partage par moitié ; les juges en tiennent compte.")
+        elif regime == "PARTICIPATION_AUX_ACQUETS":
+            notes.append("Participation aux acquêts : à la dissolution, chaque époux a droit à une "
+                         "créance égale à la moitié de l'accroissement de l'autre patrimoine.")
     if separe_assign > 18:
         notes.append(f"Procédure longue : {separe_assign} mois entre séparation et assignation — "
                      "les effets patrimoniaux et l'indemnité d'occupation s'en trouvent mécaniquement augmentés.")

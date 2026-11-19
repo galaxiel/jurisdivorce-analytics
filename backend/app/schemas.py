@@ -372,7 +372,7 @@ class SimBien(BaseModel):
 
 class SimulateurRequest(BaseModel):
     juridiction: str
-    statut: str = Field(pattern="^(MARIAGE_CRA|MARIAGE_SEP|MARIAGE_AUTRE|PACS|CONCUBINAGE)$")
+    statut: str = Field(pattern="^(MARIAGE_CRA|MARIAGE_SEP|MARIAGE_AUTRE|MARIAGE_CU|MARIAGE_PA|MARIAGE_CLAUSE|PACS|CONCUBINAGE)$")
     date_mariage: str
     date_separation: str
     date_assignation: str

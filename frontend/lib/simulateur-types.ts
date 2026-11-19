@@ -1,7 +1,9 @@
 /* Types & état du Simulateur « Mon Cas » V5 — multi-situations et multi-biens. */
 
 export type SimStatut =
-  | "MARIAGE_CRA" | "MARIAGE_SEP" | "MARIAGE_AUTRE" | "PACS" | "CONCUBINAGE";
+  | "MARIAGE_CRA" | "MARIAGE_SEP" | "MARIAGE_AUTRE"
+  | "MARIAGE_CU" | "MARIAGE_PA" | "MARIAGE_CLAUSE"
+  | "PACS" | "CONCUBINAGE";
 
 export interface SimBien {
   type: "occupation" | "locatif" | "vehicule" | "creance";
@@ -50,12 +52,28 @@ export interface SimFormState {
 }
 
 export const STATUT_LABELS: Record<SimStatut, string> = {
-  MARIAGE_CRA: "Mariés — communauté réduite aux acquêts",
+  MARIAGE_CRA: "Mariés — communauté légale / réduite aux acquêts (sans contrat ou contrat d'acquêts)",
+  MARIAGE_CLAUSE: "Mariés — contrat avec clause de partage (parts inégales, préciput, attribution intégrale)",
+  MARIAGE_CU: "Mariés — communauté universelle",
+  MARIAGE_PA: "Mariés — participation aux acquêts",
   MARIAGE_SEP: "Mariés — séparation de biens",
-  MARIAGE_AUTRE: "Mariés — autre régime",
+  MARIAGE_AUTRE: "Mariés — autre régime (non précisé)",
   PACS: "PACS",
   CONCUBINAGE: "Concubinage (indivision)",
 };
+
+/** Code régime (colonne decisions.regime_matrimonial) déduit du statut choisi. */
+export function statutToRegime(s: SimStatut): string | null {
+  switch (s) {
+    case "MARIAGE_CRA": return "COMMUNAUTE_REDUITE_AUX_ACQUETS";
+    case "MARIAGE_CLAUSE": return "COMMUNAUTE_AVEC_CLAUSE";
+    case "MARIAGE_CU": return "COMMUNAUTE_UNIVERSELLE";
+    case "MARIAGE_PA": return "PARTICIPATION_AUX_ACQUETS";
+    case "MARIAGE_SEP": return "SEPARATION_DE_BIENS";
+    case "PACS": case "CONCUBINAGE": return "INDIVISION";
+    default: return null;
+  }
+}
 
 export const BIEN_TYPE_LABELS: Record<SimBien["type"], string> = {
   occupation: "Résidence occupée par un seul",

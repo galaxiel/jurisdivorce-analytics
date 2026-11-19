@@ -171,13 +171,18 @@ def normalize_regime(name: Optional[str]) -> Optional[str]:
     n = normalize_text(name)
     if "universelle" in n:
         return "COMMUNAUTE_UNIVERSELLE"
+    # Contrat avec clause de partage : parts inégales, préciput, attribution intégrale
+    if any(k in n for k in ("clause", "preciput", "attribution integrale", "parts inegales", "partage inegal")):
+        return "COMMUNAUTE_AVEC_CLAUSE"
     if "participation" in n:
         return "PARTICIPATION_AUX_ACQUETS"
     if "separation" in n:
         return "SEPARATION_DE_BIENS"
     if "indivision" in n:
         return "INDIVISION"
-    if "reduite" in n or "acquet" in n:
+    # Depuis 1966, la communauté légale = communauté réduite aux acquêts ;
+    # une communauté conventionnelle sans clause modificatrice = idem.
+    if "reduite" in n or "acquet" in n or "legale" in n or "conventionnelle" in n:
         return "COMMUNAUTE_REDUITE_AUX_ACQUETS"
     if "communaute" in n:
         return "COMMUNAUTE_REDUITE_AUX_ACQUETS"

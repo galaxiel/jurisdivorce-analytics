@@ -1,7 +1,8 @@
 /* Types miroirs de l'API v2 (backend/app/schemas.py) + constantes d'affichage. */
 
 export const REGIME_LABELS: Record<string, string> = {
-  COMMUNAUTE_REDUITE_AUX_ACQUETS: "Communauté réduite aux acquêts",
+  COMMUNAUTE_REDUITE_AUX_ACQUETS: "Communauté légale / réduite aux acquêts (contrat d'acquêts inclus)",
+  COMMUNAUTE_AVEC_CLAUSE: "Contrat avec clause de partage (parts inégales, préciput, attribution intégrale)",
   SEPARATION_DE_BIENS: "Séparation de biens",
   PARTICIPATION_AUX_ACQUETS: "Participation aux acquêts",
   COMMUNAUTE_UNIVERSELLE: "Communauté universelle",
