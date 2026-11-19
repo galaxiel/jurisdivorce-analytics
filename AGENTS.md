@@ -4,6 +4,49 @@
 `docs/DECISIONS.md` (choix techniques et leur pourquoi). Les prompts fondateurs sont
 archivés dans `docs/`.*
 
+## 🚨 Règle d'Or N°5 — Périmètre du droit (Loi du 31 décembre 1971) 🚨
+
+> **BOUCLIER JURIDIQUE — LECTURE OBLIGATOIRE AVANT TOUTE MODIFICATION D'INTERFACE, DE
+> CALCULATEUR, DE SIMULATEUR OU D'EXPORT**
+
+En France, la consultation juridique personnalisée est un **monopole réservé aux avocats
+et notaires** (loi n° 71-1130 du 31 décembre 1971). Cette plateforme est un outil
+**statistique et factuel** : elle observe la jurisprudence passée, elle ne conseille pas.
+
+### INTERDICTIONS ABSOLUES
+
+- ❌ Ne génère JAMAIS un texte prescriptif : *"Vous avez droit à X €"*, *"Demandez X €
+  au juge"*, *"Votre ex-conjoint est en tort"*, *"Vous allez gagner"*, *"Nous vous
+  conseillons de…"*, *"La solution est…"*.
+- ❌ N'utilise JAMAIS les titres suivants dans un export : *"Conclusions"*, *"Avis
+  juridique"*, *"Assignation"*, *"Requête"*, *"Plaidoirie"*.
+- ❌ Ne présente JAMAIS une fourchette comme un montant "du", "obtenu", "garanti" ou
+  "auquel vous avez droit" — uniquement comme "médiane observée", "fourchette
+  constatée", "percentile".
+
+### OBLIGATIONS DE FORMULATION
+
+- ✅ **Statistique et factuelle uniquement** : *"Dans X % des arrêts similaires rendus par
+  la Cour d'appel de [Ville], le montant médian constaté est de Y €."*
+- ✅ *"Les motifs de rejet les plus fréquemment relevés dans la base pour ce type de
+  demande sont…"*
+- ✅ *"Sur [N] décisions comparables, la fourchette observée va de X € à Z €, avec une
+  médiane à Y €."*
+- ✅ **TITRE OBLIGATOIRE DES EXPORTS** : *"Dossier de synthèse statistique et
+  jurisprudentielle pour préparer votre rendez-vous avec votre avocat ou notaire"* —
+  jamais *"Conclusions"*, *"Avis juridique"* ou *"Assignation"*.
+- ✅ **CLAUSE DE NON-RESPONSABILITÉ** : le composant `<LegalDisclaimerFooter />` doit être
+  présent en pied de page de toutes les routes publiques et en en-tête de chaque document
+  exporté. Ne jamais le supprimer ni le raccourcir.
+
+### Checklist avant commit
+
+- [ ] Aucun texte prescriptif ajouté dans les composants, exports ou calculateurs ?
+- [ ] Le composant `<LegalDisclaimerFooter />` est-il présent sur toutes les routes ?
+- [ ] Les titres d'exports respectent-ils la formulation obligatoire ?
+- [ ] Les montants sont-ils présentés comme des observations statistiques (médiane,
+      fourchette, percentile) et non comme des droits ?
+
 ## Vue d'ensemble (30 secondes)
 
 JurisDivorce Analytics = plateforme d'analyse statistique de la jurisprudence

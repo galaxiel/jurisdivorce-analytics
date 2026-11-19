@@ -4,6 +4,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { DemoBanner } from "@/components/demo-banner";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
+import { LegalDisclaimerFooter } from "@/components/legal-disclaimer-footer";
+import { EntitlementsProvider } from "@/lib/entitlements";
 
 export const metadata: Metadata = {
   title: "JurisDivorce Analytics — Boussole & Analytics Liquidation-Partage",
@@ -15,14 +17,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" suppressHydrationWarning>
       <body className="min-h-screen">
+        <EntitlementsProvider>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <DemoBanner />
           <div className="flex min-h-screen flex-col">
             <Header />
             <main className="flex-1">{children}</main>
+            <LegalDisclaimerFooter />
             <Footer />
           </div>
         </ThemeProvider>
+        </EntitlementsProvider>
       </body>
     </html>
   );

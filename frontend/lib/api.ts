@@ -326,6 +326,21 @@ export async function postPipelineControl(action: "pause" | "resume" | "stop"): 
   });
 }
 
+export interface CheckoutResult {
+  simulation: boolean;
+  redirect_url: string;
+  tier: string;
+  price_eur: number;
+  days: number;
+}
+
+export async function postCheckoutCreateSession(tier: string): Promise<CheckoutResult> {
+  return request<CheckoutResult>("/api/checkout/create-session", {
+    method: "POST",
+    body: JSON.stringify({ tier }),
+  });
+}
+
 /* ------------------------------------------------ Export de la sélection */
 export function exportUrl(filters: DecisionFilters, format: "csv" | "json"): string {
   const { page: _p, page_size: _ps, ...statFilters } = filters;

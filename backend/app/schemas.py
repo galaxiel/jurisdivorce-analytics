@@ -388,6 +388,14 @@ class SimulateurRequest(BaseModel):
     demandes: Dict = {}
 
 
+class CheckoutResult(BaseModel):
+    simulation: bool
+    redirect_url: str
+    tier: str
+    price_eur: int
+    days: int
+
+
 class SimulateurReport(BaseModel):
     chronologie: Dict
     ressources: Dict

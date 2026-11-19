@@ -21,6 +21,8 @@ import {
 import { postSimulateurDiagnostic, useApi } from "@/lib/api";
 import { exportDossier, type DossierInput } from "@/lib/dossier";
 import { COURS_APPEL_OFFICIELLES } from "@/lib/types";
+import { useEntitlements } from "@/lib/entitlements";
+import { PaywallOverlay, PaywallHint } from "@/components/paywall-overlay";
 import { cn, formatEur, formatPct } from "@/lib/utils";
 
 const STEPS = [
@@ -34,6 +36,7 @@ const STEPS = [
 /* Vue 4 — Simulateur « Mon Cas » V5 : configurateur modulaire multi-situations. */
 export default function SimulateurPage() {
   const [form, setForm] = useState(() => defaultSimForm(COURS_APPEL_OFFICIELLES[0]));
+  const { tier, unlock } = useEntitlements();
   const [step, setStep] = useState(1);
   const [report, setReport] = useState<SimDiagnostic | null>(null);
   const [loading, setLoading] = useState(false);
@@ -403,6 +406,7 @@ function StepDiagnostic({
   form: SimFormState;
   onRestart: () => void;
 }) {
+  const { tier } = useEntitlements();
   const pc = report.pc as { fourchette?: { min: number; mediane: number; max: number }; echantillon?: number } | null;
   const pension = report.pension as {
     bareme_total_mensuel: number; bareme_par_enfant: number;
@@ -470,6 +474,9 @@ function StepDiagnostic({
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">1. Prestation compensatoire &amp; pension alimentaire</CardTitle>
+          {tier === "free" && (
+            <PaywallHint text="Les fourchettes chiffrées sont floutées — débloquez le Diagnostic Complet" />
+          )}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
