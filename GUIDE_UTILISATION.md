@@ -61,11 +61,21 @@ de les retirer en un clic avant l'ingestion de vraies décisions.
 
 La page d'accueil présente :
 
-- **4 indicateurs nationaux** : nombre de décisions analysées, abattement moyen sur
-  l'indemnité d'occupation, taux de rejet sans factures nominatives, capital moyen de
-  prestation compensatoire.
+- Un **hero** avec badge chiffré (ex. « 1 135 décisions de 12 juridictions · 2018 → 2024 »),
+  deux boutons d'action (Simuler mon cas / Voir les statistiques) et la mention « statistiques
+  indicatives — ne constituent pas un avis juridique ».
+- **4 indicateurs nationaux** : nombre de décisions analysées, abattement médian sur
+  l'indemnité d'occupation, taux de rejet sans factures nominatives, capital médian de
+  prestation compensatoire. Ils sont **pré-remplis dès le chargement** (snapshot intégré au
+  HTML) puis rafraîchis en live par l'API.
+- Une section **« Comment ça marche ? »** en 3 étapes (décrire sa situation → observer les
+  fourchettes constatées → préparer son rendez-vous avec son avocat/notaire).
 - **6 cartes d'accès** : Cockpit, Simulateur, Calculateur, Jurisprudence, Pièges, Pipeline.
-- Un **point de santé** dans la barre de navigation (vert = base et disque OK).
+- Un **bandeau CTA** final renvoyant au simulateur.
+- Un **point de santé** dans la barre de navigation (vert = base et disque OK ; infobulle avec
+  le détail au survol) et un **pied de page unique** : clause légale (loi du 31/12/1971) +
+  source des données en direct (live/snapshot, mention `SYNTHETIQUE_DEMO` uniquement si la
+  base contient réellement des décisions de démonstration).
 
 ---
 
@@ -296,7 +306,14 @@ dans `frontend/theme.config.ts` + `app/globals.css` (une seule passe pour la mod
 **Les données sont-elles de vraies décisions ?**
 Au premier lancement, non : ce sont 1 135 décisions de **démonstration** marquées
 `SYNTHETIQUE_DEMO`. Après une campagne d'ingestion (voir `/pipeline`), ce sont de **vraies
-décisions** Judilibre marquées `JUDILIBRE_OD`. Chaque fiche affiche son badge de source.
+décisions** Judilibre marquées `JUDILIBRE_OD`. Chaque fiche affiche son badge de source, et le
+pied de page indique en direct combien de décisions `SYNTHETIQUE_DEMO` restent en base
+(`synth_demo_count` via `/api/health`).
+
+**Le site est-il accessible depuis Internet (tunnel) ?**
+Oui : déployé en statique, le frontend appelle l'API en **same-origin** (`/api/…` relatifs) —
+aucun souci de CORS derrière le tunnel Cloudflare. En local, `npm run dev` (port 3100) réécrit
+automatiquement `/api/*` vers le backend sur le port 8000.
 
 **Pourquoi le filtre conserve-t-il « seulement » 7-8 % des décisions des archives ?**
 Les dumps DILA couvrent **toutes les matières** (1995-2026) : le pré-filtre retient ce qui

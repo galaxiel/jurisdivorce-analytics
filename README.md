@@ -3,9 +3,10 @@
 > **📘 Guide d'utilisation complet** : [`GUIDE_UTILISATION.md`](GUIDE_UTILISATION.md) (pas à pas, avec exemples chiffrés) — version PDF : [`GUIDE_UTILISATION.pdf`](GUIDE_UTILISATION.pdf)
 
 Plateforme d'analyse statistique et décisionnelle de la jurisprudence française en droit de la
-famille (divorce, liquidation de régime matrimonial & partage) — **v4** : ingestion massive
+famille (divorce, liquidation de régime matrimonial & partage) — **v7** : ingestion massive
 multi-fonds, recherche plein texte FTS5, calculateur juridique, radar des pièges, moniteur du
-pipeline, suite de tests et CI.
+pipeline, simulateur multi-situations, conformité juridique (Règle d'Or N°5) + freemium,
+suite de tests et CI, refonte UI et déploiement web same-origin (tunnel Cloudflare).
 
 ```
 DILA Open Data (CAPP · CASS · TJ — toutes les archives historiques, XML + JSON)
@@ -49,7 +50,7 @@ cd frontend && npm install
 npm run dev                             # http://localhost:3000 (ou -- -p 3100 si le 3000 est occupé)
 
 # 3. Tests & CI
-pytest tests -q                         # 26 tests (pipeline + API)
+pytest tests -q                         # 27 tests (pipeline + API)
 # La CI GitHub (.github/workflows/ci.yml) exécute seed + pytest + dry-run + build à chaque push.
 ```
 
@@ -92,7 +93,7 @@ cadence avec **réparation JSON** et **troncature par sections** (en-tête + mot
 
 | Vue | Route | Contenu |
 |---|---|---|
-| Accueil | `/` | Hero + KPIs nationaux + accès modules + bandeau démo |
+| Accueil | `/` | Hero (badge chiffré, dégradé) + 4 KPIs nationaux **pré-remplis en SSR** + « Comment ça marche » + 6 cartes modules + CTA + bandeau démo |
 | **Cockpit Global** | `/analytics` | KPIs réactifs aux filtres croisés + 8 graphiques (comparateur inter-cours, **tendances par année**, distribution des abattements, succès par nature réclamé/obtenu, corrélation PC, distribution PC, motifs de rejet, succès par preuve) |
 | **Simulateur « Mon Cas »** | `/simulateur` | 4 étapes → fourchettes observées, chances par preuve, checklist des preuves gagnantes, alertes pièges, 5 décisions jumelles, **Dire à Notaire** (Word/Markdown/PDF) |
 | **Calculateur juridique** | `/calculateur` | Art. 815-9 : indemnité d'occupation (abattement médian de la cour, **alerte prescription quinquennale**, 10 arrêts comparables) · Art. 1469 : profit subsistant vs dépense faite + taux de rejet constatés |
@@ -106,7 +107,7 @@ nature de réclamation, issue, immobilier, fourchette de montants, plein texte �
 
 ## Tests & CI
 
-- `tests/` : **26 tests pytest** (filtre normalisé, null vs 0, réparation JSON, troncature,
+- `tests/` : **27 tests pytest** (filtre normalisé, null vs 0, réparation JSON, troncature,
   XML DILA, limiteur adaptatif, BatchWriter, 20 routes API, calculateur, pièges, tendances,
   FTS, démo, config, export). Lancer : `pytest tests -q`.
 - CI : `.github/workflows/ci.yml` — à chaque push : deps → seed → pytest → dry-run pipeline
@@ -115,11 +116,31 @@ nature de réclamation, issue, immobilier, fourchette de montants, plein texte �
 ## Architecture (re-skin en une passe)
 
 - `frontend/theme.config.ts` + `app/globals.css` : toute l'identité visuelle (HSL, radius,
-  polices, ombres) est centralisée — changer les valeurs = nouvelle charte, rien d'autre.
-- Aucun `fetch` dans les composants d'affichage : tout passe par `lib/api.ts`.
+  polices, ombres 3 niveaux en variables CSS, utilitaires `bg-hero`/`bg-grid`/`text-gradient`)
+  est centralisée — changer les valeurs = nouvelle charte, rien d'autre.
+- Aucun `fetch` dans les composants d'affichage : tout passe par `lib/api.ts`, en **same-origin**
+  (`API_BASE=""` → `/api/…`) ; en dev, `next.config.mjs` réécrit `/api/*` vers `127.0.0.1:8000`.
+  Repli hors-ligne : snapshots `frontend/public/data/*.json` (aussi utilisés comme valeurs
+  SSR initiales de l'accueil/header).
+- Un seul pied de page : `components/legal-disclaimer-footer.tsx` (clause légale obligatoire +
+  source des données dynamique via `/api/health.synth_demo_count`).
 - Types TypeScript alignés manuellement sur `backend/app/schemas.py`.
 - Migration légère : `ensure_schema()` ajoute les colonnes en `ALTER TABLE` sans perte ;
   `ensure_fts()` maintient l'index plein texte (triggers + rebuild).
+
+## Déploiement web (statique + API same-origin)
+
+```bash
+cd frontend && BUILD_STATIC=1 npm run build        # export statique → frontend/out/
+rm -rf ../backend/static_site && cp -r out ../backend/static_site
+# FastAPI sert alors le site sur / ET l'API sur /api/* (même process, même origine)
+cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8100
+# tunnel Cloudflare : cloudflared tunnel --url http://127.0.0.1:8100
+```
+
+⚠️ Tout changement **backend** (`main.py`, `schemas.py`, routers) exige de **redémarrer** le
+process uvicorn (pas de rechargement à chaud en production) ; le site statique, lui, est servi
+à la volée depuis `backend/static_site/`.
 
 ## Kit de reprise par un agent
 

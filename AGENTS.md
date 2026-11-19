@@ -71,6 +71,7 @@ pytest tests -q
 
 # 2. Frontend : type-check + build + prerender (doit passer sans erreur)
 cd frontend && npm run build && cd ..
+#    (déploiement statique : BUILD_STATIC=1 npm run build, cf. section Environnement)
 
 # 3. Pipeline : dry-run (0 token) sur une archive de test
 python -m pipeline.ingest run --local <archive.tar.gz> --dry-run --db /tmp/test.db
@@ -84,7 +85,15 @@ python -m pipeline.ingest status --db /tmp/test.db
 
 - Git Bash + Python 3.11 global + Node 26. Shell : Git Bash.
 - **Ports** : backend `8000`, frontend `3100` — le port 3000 est occupé par une autre
-  application de l'utilisateur, ne pas y toucher.
+  application de l'utilisateur, ne pas y toucher. **Déploiement web** (tunnel Cloudflare) :
+  `cloudflared tunnel --url http://127.0.0.1:8100` avec uvicorn sur **8100** (sert
+  `backend/static_site/` + `/api/*` en same-origin).
+- **Redémarrage backend obligatoire après toute modif Python** (pas de hot-reload en prod) :
+  `Get-NetTCPConnection -LocalPort <port> | % { Stop-Process -Id $_.OwningProcess -Force }`
+  puis relancer `python -m uvicorn app.main:app --host 127.0.0.1 --port <port>` depuis `backend/`.
+- **Déploiement du site statique** : `cd frontend && BUILD_STATIC=1 npm run build` puis
+  `rm -rf backend/static_site && cp -r frontend/out backend/static_site` (servi à la volée,
+  sans redémarrer l'API).
 - Warnings git `LF will be replaced by CRLF` : **ignorables** (Windows autocrlf).
 - Chemins : `/tmp` de Git Bash ≠ `/tmp` vu par Python Windows — utiliser `cygpath -w`.
 - **Jamais committer** : `archives/` (dumps DILA jusqu'à ~292 Mo > limite GitHub 100 Mo),
@@ -124,7 +133,9 @@ python -m pipeline.ingest status --db /tmp/test.db
 | Recherche plein texte (FTS5) | `backend/app/database.py` (`ensure_fts` : index + triggers + rebuild) + `services/query.py` (`_fts_search_ids`, repli LIKE) |
 | Sources Open Data | `pipeline/dila.py` (BFS + tri + fonds) ; formats : `parse_juri_xml` (XML DILA) et `_json_payloads` (JSON) dans `core.py`/`ingest.py` |
 | DLQ / relance des échecs | table `failed_decisions` + `record_failure()`/`read_config()` (core.py) + `drain_failed` (ingest.py) + POST `/api/pipeline/retry-failed` + CLI `retry-failed` |
-| Moniteur / santé | `backend/app/routers/pipeline.py` + `/api/health` (main.py) + `frontend/app/pipeline/page.tsx` + dot navbar (`header.tsx`) |
+| Moniteur / santé | `backend/app/routers/pipeline.py` + `/api/health` (main.py, champ `synth_demo_count`) + `frontend/app/pipeline/page.tsx` + dot navbar (`header.tsx`) |
+| Couche API front (same-origin) | `frontend/lib/api.ts` (`API_BASE=""` par défaut, repli snapshot `public/data/*.json`) + `frontend/next.config.mjs` (rewrites `/api/*` → 8000 en dev) — **ne jamais remettre d'URL absolue en dur** (bug CORS tunnel V7) |
+| Pied de page unique | `frontend/components/legal-disclaimer-footer.tsx` (clause légale Règle d'Or N°5 + source dynamique) — l'ancien `layout/footer.tsx` a été supprimé, ne pas le recréer |
 | Mode démo | `backend/app/routers/demo.py` (`is_demo=true`) + `components/demo-banner.tsx` |
 
 ## Pièges connus

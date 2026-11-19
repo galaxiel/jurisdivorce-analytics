@@ -1,6 +1,6 @@
 # Journal des décisions techniques — pourquoi c'est construit comme ça
 
-*Chaque entrée : contexte → décision → raison. En ordre chronologique (v1 → v2 → fixes).*
+*Chaque entrée : contexte → décision → raison. En ordre chronologique (v1 → v7).*
 
 ## 1. SQLite par défaut, Postgres par variable d'environnement
 **Contexte** : cahier des charges « PostgreSQL / SQLite ». **Décision** : SQLite en dev
@@ -140,3 +140,41 @@ le repli LIKE garantit zéro régression.
 (archive synthétique : 3 fichiers lus, 1 conservée) ; frontend npm ci → build.
 **Pourquoi** : le run rouge du premier essai (openai manquant) a montré la valeur ; la CI est
 le filet qui protège la reprise par un autre agent.
+
+## 22. API en same-origin par défaut + rewrites Next en dev (V7)
+**Contexte** : déployé derrière un tunnel Cloudflare, le build statique embarquait
+`API_BASE=http://127.0.0.1:8000` en dur ; l'origine `https://….trycloudflare.com` n'étant pas
+autorisée par le CORS backend (regex localhost), le navigateur bloquait tous les appels API —
+sauf que `/api/pipeline/*` n'a pas de repli snapshot : l'onglet Pipeline apparaissait cassé.
+**Décision** : `API_BASE = ""` (fetch relatif `/api/…`) dans `lib/api.ts` ; en mode non statique,
+`next.config.mjs` réécrit `/api/:path*` vers `http://127.0.0.1:8000/api/:path*` ; en déploiement,
+FastAPI sert le site statique ET l'API sur la même origine. `NEXT_PUBLIC_API_URL` reste
+prioritaire si défini. **Pourquoi** : une seule origine = zéro CORS, zéro divergence dev/prod ;
+le repli snapshot (`/data/*.json`) n'est plus qu'un mode hors-ligne.
+
+## 23. Pied de page unique + mention `SYNTHETIQUE_DEMO` dynamique (V7)
+**Contexte** : deux footers se superposaient (`LegalDisclaimerFooter` + `Footer`), et la mention
+« données marquées SYNTHETIQUE_DEMO tant que le pipeline n'a pas tourné » était en texte fixe,
+peu importe le contenu réel de la base. **Décision** : `Footer` supprimé, tout est fusionné dans
+`LegalDisclaimerFooter` (clause légale Règle d'Or N°5 conservée intégralement) ; la ligne de
+source est calculée depuis `/api/health`, enrichi d'un champ `synth_demo_count` (count
+`source='SYNTHETIQUE_DEMO'`) — la mention démo ne s'affiche que si la base en contient.
+**Pourquoi** : un seul footer à maintenir, et un affichage factuel qui bascule tout seul
+(`JUDILIBRE_OD`) quand la campagne réelle a tourné.
+
+## 24. Pré-remplissage SSR depuis les snapshots `public/data/*.json` (V7)
+**Contexte** : en export statique, les hooks client partent de `null` → cartes KPI vides dans le
+HTML initial (clignotement + mauvais SEO). **Décision** : importer les JSON du snapshot
+(`stats_globales.json`, `health.json` — `resolveJsonModule` déjà actif) comme valeur initiale
+(`data ?? snapshot`) dans l'accueil et le header ; l'appel API live écrase après hydratation.
+**Pourquoi** : le HTML rendu contient déjà les chiffres réels, les moteurs indexent la page,
+et l'utilisateur ne voit aucun état vide.
+
+## 25. Thème : ombres en variables CSS 3 niveaux + utilitaires de fond (V7)
+**Contexte** : re-skin « en une passe » toujours limité à `theme.config.ts` + `globals.css`, mais
+les ombres étaient en dur dans les classes utilitaires et il manquait des fonds décoratifs.
+**Décision** : `--shadow-card` / `--shadow-card-hover` / `--shadow-elevated` définies dans
+`:root` et `.dark` (miroir de `themeConfig.shadows`), utilitaires `bg-hero`, `bg-grid`,
+`text-gradient`, `bg-banner` en `globals.css` ; `Card`/`KpiCard` branchés sur `shadow-card`.
+**Pourquoi** : toute la profondeur visuelle (light + dark) se règle toujours dans les 2 mêmes
+fichiers, sans toucher aux composants.

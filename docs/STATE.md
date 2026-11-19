@@ -1,6 +1,6 @@
 # ÉTAT DU PROJET — snapshot pour reprise par un agent
 
-*Dernière mise à jour : 2026-11-19 (mission V3 : robustesse + fonctionnalités métier) · dépôt `galaxiel/jurisdivorce-analytics` (public, `main`)*
+*Dernière mise à jour : 2026-11-19 (missions V3→V7 : robustesse, métier, conformité, freemium, refonte UI + correctifs déploiement) · dépôt `galaxiel/jurisdivorce-analytics` (public, `main`)*
 *Lire aussi : `AGENTS.md` (règles + commandes), `docs/DECISIONS.md` (pourquoi des choix) et [`GUIDE_UTILISATION.md`](../GUIDE_UTILISATION.md) (+ PDF) pour le manuel utilisateur.*
 
 ## Stack
@@ -31,7 +31,7 @@ GLM Flash Zhipu (API openai-compliant) pour l'extraction.
 | **V3 — Chantier 3 (qualité)** | `/api/health` enrichi (DB, disque, worker, version 3.0) + **dot de santé dans la navbar** · badge `warning` ambre ajouté au thème · build 10/10 routes · routes `/calculateur`, `/pieges` vérifiées navigateur |
 | **V4 (autonome) — Recherche FTS5** | Index `decisions_fts` + triggers INSERT/UPDATE/DELETE + rebuild auto si désync (`ensure_fts`) ; `q=` passe par FTS (AND de phrases, repli LIKE) | pytest `test_recherche_fts` ✓ |
 | **V4 — Analytics temporelles** | `/api/stats/tendances` (par année : volume, abattement médian, PC médiane, taux succès) + graphique `TendancesChart` dans le Cockpit | pytest + vérifié navigateur |
-| **V4 — Suite pytest formelle** | `tests/` (conftest sys.path) : **26 tests verts** — filtre, normalisation, null/0, repair_json, troncature, XML DILA, limiteur, BatchWriter, 20 routes API, calculateur, pièges, tendances, FTS, démo, config, export | `pytest tests -q` → 26 passed |
+| **V4 — Suite pytest formelle** | `tests/` (conftest sys.path) : **27 tests verts** — filtre, normalisation, null/0, repair_json, troncature, XML DILA, limiteur, BatchWriter, 20 routes API, calculateur, pièges, tendances, FTS, démo, config, export | `pytest tests -q` → 27 passed |
 | **V4 — CI GitHub Actions** | `.github/workflows/ci.yml` : backend (deps → seed → pytest → dry-run pipeline) + frontend (npm ci → build) sur chaque push | run à vérifier sur le push |
 | **V4 — Multi-fonds réels** | **CAPP 2 001 conservées** (26 k parcourues) + **CASS 785 conservées (145 421 fichiers XML lus)** — deux fonds traités en autonomie, manifest `done` ×2 | `/api/pipeline/archives` |
 
@@ -50,7 +50,7 @@ l'archive CAPP réelle).
    la couche embeddings se brancherait dans `services/query.py`.
 4. **Postgres + agrégats SQL** — voir piège « stats agrégées en Python » dans `AGENTS.md`.
 5. **Monétisation / auth** (Phase 4) — aucune authentification aujourd'hui.
-6. Tests frontend (vitest) — le backend est couvert par `tests/` (26 tests verts).
+6. Tests frontend (vitest) — le backend est couvert par `tests/` (27 tests verts).
 
 ## Limitations connues (assumées, à ne pas considérer comme des bugs)
 
@@ -92,3 +92,12 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
 - `$DATA_DIR` persiste par instance → mécanisme `seed_version.txt` dans start.sh pour forcer le re-seed si le jeu de données change.
 - `cp -r src dest` avec dest existant crée un DOSSIER IMBRIQUÉ → toujours `rm -rf dest && cp -r src dest`.
 - La limite ZCode Sites est 10 déplois/hour → planifier les redéploiements en conséquence.
+
+**Mission V7 (2026-11-19, refonte UI + correctifs déploiement — non commité au moment du snapshot)** :
+- **Refonte UI** : thème enrichi (ombres 3 niveaux `card`/`card-hover`/`elevated` en variables CSS light+dark, radius 0,875 rem, utilitaires `bg-hero`/`bg-grid`/`text-gradient`/`bg-banner`, focus-visible, scrollbar discrète — toujours confinés à `theme.config.ts` + `globals.css`) ; landing redesign (hero halo dégradé + badge chiffré, KPIs avec icônes, section « Comment ça marche » 3 étapes, cartes modules avec flèche au hover, bandeau CTA) ; header : pilule active `bg-primary/10 text-primary` + `aria-current` ; `Card`/`KpiCard` sur `shadow-card`, `Button` micro-lift.
+- **Un seul pied de page** : l'ancien `components/layout/footer.tsx` est supprimé, fusionné dans `LegalDisclaimerFooter` (texte légal Règle d'Or N°5 **intégral**) + ligne de source dynamique via `/api/health` (`source` live/snapshot + nouveau champ **`synth_demo_count`** : la mention `SYNTHETIQUE_DEMO` ne s'affiche que si la base en contient réellement).
+- **Pré-remplissage SSR** : accueil et header lisent les snapshots `frontend/public/data/*.json` (`stats_globales.json`, `health.json`) comme valeurs initiales → HTML rendu contient déjà les KPIs (SEO, zéro skeleton au chargement) ; l'API live écrase ensuite côté client.
+- **Fix déploiement / CORS (bug onglet Pipeline via le tunnel)** : `API_BASE` vaut désormais `""` (appels `/api/*` **same-origin**) dans `lib/api.ts` ; en dev (`npm run dev`/`start` sur 3100), `next.config.mjs` réécrit `/api/:path*` → `http://127.0.0.1:8000/api/:path*`. Avant, le build statique embarquait `http://127.0.0.1:8000` en dur → depuis l'origine Cloudflare, le CORS backend (regex localhost) bloquait tout → repli snapshot partout sauf `/api/pipeline/*` (pas de fallback) = onglet cassé. `DemoBanner` passe désormais par `lib/api.ts` (`postDemoSeed`/`deleteDemo`), plus de `fetch` en dur.
+- **Fix page /pipeline** : formulaire de config initialisé depuis la config courante (ne écrase plus les champs non touchés), nom d'archive tronqué sur `/` **et** `\`, badge de statut avec fallback si valeur inconnue.
+- **Déploiement local (constaté le 2026-11-19)** : le tunnel Cloudflare (`https://….trycloudflare.com`) pointe sur **127.0.0.1:8100** (uvicorn `app.main:app` qui sert `backend/static_site/` + `/api/*` en same-origin) ; le dev local reste 8000 (API) + 3100 (frontend). Procédure de mise à jour : `cd frontend && BUILD_STATIC=1 npm run build` puis `rm -rf backend/static_site && cp -r frontend/out backend/static_site` (servi à la volée, sans redémarrer) ; **tout changement backend (`main.py`, `schemas.py`, routers) exige un redémarrage du process uvicorn** (tuer via `Get-NetTCPConnection -LocalPort <port> | Stop-Process -Id …`).
+- **Vérifications V7** : `pytest tests -q` → 27 passed · `npm run build` (dev + `BUILD_STATIC=1`) → 13 pages OK · routes 200 sur le tunnel · HTML SSR contient « 1 135 décisions » et le footer unique · aucun chunk JS ne contient `127.0.0.1:8000`.
