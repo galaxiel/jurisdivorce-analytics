@@ -194,3 +194,16 @@ sont le même régime) ; le simulateur gagne 3 statuts (CU, participation, claus
 régime via `STATUT_REGIME`, et le diagnostic filtre désormais les décisions comparables par
 régime (repli tous-régimes + note si < 8). **Pourquoi** : un régime non reconnu ne doit jamais
 devenir une donnée fantôme ; et les fourchettes doivent être calculées sur le bon régime.
+
+## 27. Audit des autres énumérations d'extraction : `nature` en labels FR vs codes en base (V7)
+**Contexte** : même défaut que le régime — le prompt LLM émettait `nature` en **labels français**
+("Travaux amélioration"…) tandis que le seed, les filtres (`nature_reclamation`) et les facets
+utilisaient des **codes** (`TRAVAUX_BIEN_PROPRE`…) ; `save_decision` stockait brut → sur de vraies
+données, le filtre par nature aurait renvoyé 0 résultat et les facets auraient listé des valeurs
+infiltrables. **Décision** : prompt passé en codes ; nouveaux normaliseurs dans `pipeline/core.py`
+(`normalize_nature` — inconnu → `AUTRE` filtrable, jamais de texte brut ; `normalize_type_procedure`,
+`normalize_pc_forme` — inconnu → null, `normalize_mode_garde`) appliqués dans `save_decision` ;
+les autres énumérations (`statut`, `regle_calcul`, `demandeur`, `preuve_type` via `classify_proof`)
+étaient déjà cohérentes. Tests unitaires ajoutés (30 tests verts). **Pourquoi** : un champ
+énuméré doit avoir UN vocabulaire canonique, imposé à l'écriture — sinon les filtres et les
+facettes divergent silencieusement dès la première vraie ingestion.

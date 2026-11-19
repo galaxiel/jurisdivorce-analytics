@@ -189,6 +189,120 @@ def normalize_regime(name: Optional[str]) -> Optional[str]:
     return name.strip()
 
 
+NATURE_CODES = {
+    "TRAVAUX_BIEN_PROPRE", "FINANCEMENT_ACQUISITION", "REMBOURSEMENT_EMPRUNT",
+    "APPORT_FONDS_PROPRES", "RECEL_COMMUNAUTE", "COMPTE_JOINT_VIDE",
+    "TAXES_ASSURANCE", "AUTRE",
+}
+_NATURE_ALIASES = {
+    "travaux": "TRAVAUX_BIEN_PROPRE",
+    "financement": "FINANCEMENT_ACQUISITION",
+    "acquisition": "FINANCEMENT_ACQUISITION",
+    "remboursement": "REMBOURSEMENT_EMPRUNT",
+    "emprunt": "REMBOURSEMENT_EMPRUNT",
+    "apport": "APPORT_FONDS_PROPRES",
+    "heritage": "APPORT_FONDS_PROPRES",
+    "recel": "RECEL_COMMUNAUTE",
+    "compte joint": "COMPTE_JOINT_VIDE",
+    "taxe": "TAXES_ASSURANCE",
+    "assurance": "TAXES_ASSURANCE",
+    "autre": "AUTRE",
+}
+
+
+def normalize_nature(v: Any) -> Optional[str]:
+    """Nature de réclamation → code canonique (NATURE_FR). Inconnu → AUTRE (filtrable),
+    jamais de texte brut en base."""
+    if not v:
+        return None
+    s = str(v).strip()
+    if s in NATURE_CODES:
+        return s
+    n = normalize_text(s)
+    if n.upper() in NATURE_CODES:
+        return n.upper()
+    for k, code in _NATURE_ALIASES.items():
+        if k in n:
+            return code
+    return "AUTRE"
+
+
+_TYPE_PROC_ALIASES = {
+    "liquidation": "Liquidation-partage après divorce",
+    "partage": "Liquidation-partage après divorce",
+    "divorce": "Divorce contentieux",
+    "indivision": "Indivision hors mariage/PACS",
+    "pacs": "Indivision hors mariage/PACS",
+    "jaf": "Appel sur ordonnance JAF",
+    "appel": "Appel sur ordonnance JAF",
+}
+_TYPE_PROC_CODES = {
+    "Divorce contentieux", "Liquidation-partage après divorce",
+    "Indivision hors mariage/PACS", "Appel sur ordonnance JAF",
+}
+
+
+def normalize_type_procedure(v: Any) -> Optional[str]:
+    if not v:
+        return None
+    s = str(v).strip()
+    if s in _TYPE_PROC_CODES:
+        return s
+    n = normalize_text(s)
+    for k, canon in _TYPE_PROC_ALIASES.items():
+        if k in n:
+            return canon
+    return s
+
+
+_PC_FORME_CODES = {
+    "CAPITAL_UNIQUE", "CAPITAL_ECHELONNE", "RENTE_MENSUELLE",
+    "ATTRIBUTION_BIEN", "MIXTE", "AUCUNE",
+}
+_PC_FORME_ALIASES = {
+    "capital unique": "CAPITAL_UNIQUE", "unique": "CAPITAL_UNIQUE",
+    "echelonne": "CAPITAL_ECHELONNE", "rente": "RENTE_MENSUELLE",
+    "attribution": "ATTRIBUTION_BIEN", "bien": "ATTRIBUTION_BIEN",
+    "mixte": "MIXTE", "aucune": "AUCUNE",
+}
+
+
+def normalize_pc_forme(v: Any) -> Optional[str]:
+    if not v:
+        return None
+    s = str(v).strip()
+    if s in _PC_FORME_CODES:
+        return s
+    n = normalize_text(s)
+    if n.upper() in _PC_FORME_CODES:
+        return n.upper()
+    for k, code in _PC_FORME_ALIASES.items():
+        if k in n:
+            return code
+    return None  # inconnu → null (l'info brute reste dans extracted_json)
+
+
+_MODE_GARDE_CODES = {"Résidence classique + DVH", "Garde alternée", "Non précisé"}
+_MODE_GARDE_ALIASES = {
+    "classique": "Résidence classique + DVH", "dvh": "Résidence classique + DVH",
+    "alternee": "Garde alternée", "garde alternee": "Garde alternée",
+    "non precise": "Non précisé",
+}
+
+
+def normalize_mode_garde(v: Any) -> Optional[str]:
+    if not v:
+        return None
+    s = str(v).strip()
+    if s in _MODE_GARDE_CODES:
+        return s
+    n = normalize_text(s)
+    for k, canon in _MODE_GARDE_ALIASES.items():
+        if k in n:
+            return canon
+    return None
+
+
 def norm_amount(v: Any) -> Optional[float]:
     """Montant financier : nombre pur ou None. Négatif / non numérique → None.
     `0` est réservé aux demandes explicitement rejetées (appliqué dans save_decision)."""
@@ -467,7 +581,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 decision_id, "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"),
                 normalize_juridiction(meta.get("juridiction")),
                 meta.get("chambre"), meta.get("date_decision"),
-                ctx.get("type_procedure"), normalize_regime(ctx.get("regime_matrimonial")),
+                normalize_type_procedure(ctx.get("type_procedure")), normalize_regime(ctx.get("regime_matrimonial")),
                 _num(ctx.get("duree_mariage_annees")), _num(ctx.get("nombre_enfants")), _num(ctx.get("age_epoux_moyen")),
                 _bool(biens.get("bien_immobilier_principal")), norm_amount(biens.get("valeur_bien_principal")),
                 _bool(biens.get("entreprises_societes")), _bool(biens.get("comptes_epargne")),
@@ -477,7 +591,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 norm_amount(occ.get("montant_mensuel_final")), _num(occ.get("duree_mois_retenue")),
                 norm_amount(occ.get("montant_total_accorde")),
                 occ.get("motifs_rejet_ou_reduction") or occ.get("motif_refus_ou_modulation"),
-                _bool(pc.get("demandee")), _bool(pc.get("accordee")), pc.get("forme"),
+                _bool(pc.get("demandee")), _bool(pc.get("accordee")), normalize_pc_forme(pc.get("forme")),
                 norm_amount(pc.get("montant_capital_accorde") or pc.get("montant_accorde")),
                 norm_amount(pc.get("montant_demande_epoux_A")), norm_amount(pc.get("montant_propose_epoux_B")),
                 norm_amount(pc.get("ecart_revenus_mensuel")),
@@ -492,7 +606,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 norm_amount(gest.get("solde_restitue_indivision")),
                 norm_amount(pen.get("pension_par_enfant")),
                 norm_amount(pen.get("revenus_debiteur_mois")),
-                pen.get("mode_garde"),
+                normalize_mode_garde(pen.get("mode_garde")),
                 _bool(pen.get("partage_frais_exceptionnels")),
                 _bool(rev.get("prestations_sociales_integrees")),
                 norm_amount(rev.get("ecart_ressources_totales")),
@@ -523,7 +637,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                    regle_calcul, preuves_json)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    decision_id, r.get("nature") or r.get("categorie"), r.get("demandeur"),
+                    decision_id, normalize_nature(r.get("nature") or r.get("categorie")), r.get("demandeur"),
                     norm_amount(r.get("montant_reclame") or r.get("montant_demande")),
                     accorde, statut,
                     classify_proof(r.get("preuve_clef_retenue"), r.get("cause_echec"), r.get("motif_echec")),

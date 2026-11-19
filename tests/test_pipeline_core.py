@@ -12,7 +12,11 @@ from pipeline.core import (
     decision_filter,
     norm_amount,
     normalize_juridiction,
+    normalize_mode_garde,
+    normalize_nature,
+    normalize_pc_forme,
     normalize_regime,
+    normalize_type_procedure,
     parse_juri_xml,
     repair_json,
     save_decision,
@@ -66,6 +70,39 @@ def test_normalize_regime():
     assert normalize_regime("communauté avec préciput au profit du conjoint survivant") == "COMMUNAUTE_AVEC_CLAUSE"
     assert normalize_regime("clause de parts inégales 70/30") == "COMMUNAUTE_AVEC_CLAUSE"
     assert normalize_regime("communauté universelle avec clause d'attribution intégrale") == "COMMUNAUTE_UNIVERSELLE"
+
+def test_normalize_nature():
+    # Codes du prompt → codes canoniques
+    assert normalize_nature("TRAVAUX_BIEN_PROPRE") == "TRAVAUX_BIEN_PROPRE"
+    # Labels FR (ancien prompt / variantes LLM) → codes
+    assert normalize_nature("Travaux amélioration") == "TRAVAUX_BIEN_PROPRE"
+    assert normalize_nature("Financement bien propre") == "FINANCEMENT_ACQUISITION"
+    assert normalize_nature("Remboursement emprunt immobilier post-séparation") == "REMBOURSEMENT_EMPRUNT"
+    assert normalize_nature("Apport fonds propres / héritage") == "APPORT_FONDS_PROPRES"
+    assert normalize_nature("Recel de communauté") == "RECEL_COMMUNAUTE"
+    assert normalize_nature("Compte joint vidé") == "COMPTE_JOINT_VIDE"
+    assert normalize_nature("Taxes foncières / assurance") == "TAXES_ASSURANCE"
+    # Inconnu → AUTRE (filtrable), jamais de texte brut
+    assert normalize_nature("quelque chose d'inédit") == "AUTRE"
+    assert normalize_nature(None) is None
+
+def test_normalize_type_procedure():
+    assert normalize_type_procedure("Liquidation-partage après divorce") == "Liquidation-partage après divorce"
+    assert normalize_type_procedure("liquidation du régime matrimonial") == "Liquidation-partage après divorce"
+    assert normalize_type_procedure("divorce pour altération définitive") == "Divorce contentieux"
+    assert normalize_type_procedure("Appel sur ordonnance JAF") == "Appel sur ordonnance JAF"
+    assert normalize_type_procedure(None) is None
+
+def test_normalize_pc_forme_mode_garde():
+    assert normalize_pc_forme("CAPITAL_UNIQUE") == "CAPITAL_UNIQUE"
+    assert normalize_pc_forme("Capital unique") == "CAPITAL_UNIQUE"
+    assert normalize_pc_forme("rente viagère mensuelle") == "RENTE_MENSUELLE"
+    assert normalize_pc_forme("attribution du bien") == "ATTRIBUTION_BIEN"
+    assert normalize_pc_forme("xyz") is None
+    assert normalize_mode_garde("Garde alternée") == "Garde alternée"
+    assert normalize_mode_garde("garde alternee") == "Garde alternée"
+    assert normalize_mode_garde("classique") == "Résidence classique + DVH"
+    assert normalize_mode_garde(None) is None
 
 def test_norm_amount():
     assert norm_amount("-5") is None
