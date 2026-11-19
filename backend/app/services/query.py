@@ -1,11 +1,30 @@
 """Constructeur de requête partagé : filtres croisés pour /decisions, /stats/* et /export."""
-from typing import List
+import re
+from typing import List, Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Query, Session
 
 from ..models import Decision, Recompense
 from ..schemas import DecisionFiltersQuery
+
+
+def _fts_search_ids(db: Session, query: str) -> Optional[List[str]]:
+    """Recherche plein texte FTS5 (AND sur les mots, index tenu par triggers).
+
+    Retourne None si FTS indisponible → repli LIKE par l'appelant."""
+    words = [w for w in re.findall(r"\w+", query, re.UNICODE) if len(w) > 1]
+    if not words:
+        return None
+    match = " ".join(f'"{w}"' for w in words)  # AND de phrases → sans erreur de syntaxe FTS
+    try:
+        rows = db.execute(
+            text("SELECT id FROM decisions_fts WHERE decisions_fts MATCH :m LIMIT 1000"),
+            {"m": match},
+        ).all()
+        return [r[0] for r in rows]
+    except Exception:
+        return None
 
 
 def filtered_query(db: Session, f: DecisionFiltersQuery) -> Query:
@@ -32,13 +51,18 @@ def filtered_query(db: Session, f: DecisionFiltersQuery) -> Query:
         if f.montant_max is not None:
             q = q.filter(montant <= f.montant_max)
     if f.q:
-        like = f"%{f.q}%"
-        q = q.filter(
-            Decision.resume_3_lignes.ilike(like)
-            | Decision.resume_pedagogique.ilike(like)
-            | Decision.juridiction.ilike(like)
-            | Decision.numero_rg.ilike(like)
-        )
+        fts_ids = _fts_search_ids(db, f.q)
+        if fts_ids:
+            q = q.filter(Decision.id.in_(fts_ids))
+        else:
+            # Repli LIKE (FTS indisponible ou aucun résultat FTS)
+            like = f"%{f.q}%"
+            q = q.filter(
+                Decision.resume_3_lignes.ilike(like)
+                | Decision.resume_pedagogique.ilike(like)
+                | Decision.juridiction.ilike(like)
+                | Decision.numero_rg.ilike(like)
+            )
     return q.order_by(Decision.date_decision.desc().nullslast())
 
 

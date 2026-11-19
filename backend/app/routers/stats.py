@@ -22,6 +22,7 @@ from ..schemas import (
     PCDistribution,
     Piege,
     PreuveSucces,
+    TendancePoint,
 )
 from ..services.query import load_decisions, load_recompenses
 
@@ -255,6 +256,39 @@ def recompenses_par_preuve(filters: DecisionFiltersQuery = Depends(), db: Sessio
                 montant_moyen_accorde=_mean(accordees),
             )
         )
+    return out
+
+
+@router.get("/tendances", response_model=List[TendancePoint])
+def tendances(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    """Analytics temporelles : volume, abattement médian, PC médiane et taux de succès
+    par année de décision (réactif aux filtres croisés)."""
+    decisions = load_decisions(db, filters)
+    recs = load_recompenses(db, decisions)
+    recs_by_decision: dict[str, list] = defaultdict(list)
+    for r in recs:
+        recs_by_decision[r.decision_id].append(r)
+
+    by_year: dict[str, list] = defaultdict(list)
+    for d in decisions:
+        if d.date_decision and len(d.date_decision) >= 4:
+            by_year[d.date_decision[:4]].append(d)
+
+    out = []
+    for year in sorted(by_year):
+        group = by_year[year]
+        abat = [d.occupation_abattement_pct for d in group
+                if d.occupation_accordee and d.occupation_abattement_pct is not None]
+        capitals = [d.pc_montant_capital for d in group
+                    if d.pc_accordee and d.pc_montant_capital is not None]
+        statutaires = [r for d in group for r in recs_by_decision.get(d.id, []) if r.statut]
+        out.append(TendancePoint(
+            annee=int(year),
+            nb_decisions=len(group),
+            abattement_median_pct=_median(abat),
+            pc_mediane=_median(capitals),
+            taux_succes_pct=round(100 * sum(r.statut != "REJETE" for r in statutaires) / len(statutaires), 1) if statutaires else None,
+        ))
     return out
 
 

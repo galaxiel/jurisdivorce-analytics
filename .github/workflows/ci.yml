@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Installer les dépendances
+        run: |
+          pip install -r backend/requirements.txt pytest httpx python-dotenv
+      - name: Générer le jeu de démonstration
+        working-directory: backend
+        run: python -m app.seed
+      - name: Smoke API + suite pytest
+        run: pytest tests -q
+      - name: Vérifier le pipeline (dry-run, 0 token)
+        run: |
+          python - <<'EOF'
+          import asyncio, json, tarfile, io, tempfile, os
+          from pipeline.ingest import iter_decisions_from_archive, decision_filter
+          tmp = tempfile.mkdtemp()
+          docs = [
+              {"id": "C1", "text": "La liquidation du régime matrimonial et l'état liquidatif sont prononcés par la cour. " * 20},
+              {"id": "C2", "text": "Trop court."},
+              {"id": "C3", "text": "Les motifs de la decision occultes. " * 200},
+          ]
+          path = os.path.join(tmp, "capp.tar.gz")
+          with tarfile.open(path, "w:gz") as t:
+              for d in docs:
+                  b = json.dumps(d).encode()
+                  info = tarfile.TarInfo(name=f"{d['id']}.json"); info.size = len(b)
+                  t.addfile(info, io.BytesIO(b))
+          counters = {"files_read": 0}
+          kept = [(i, x) for i, x in iter_decisions_from_archive(path, counters) if decision_filter(x)[0]]
+          assert counters["files_read"] == 3 and len(kept) == 1, (counters, kept)
+          print("pipeline dry-run OK :", counters, "kept =", len(kept))
+          EOF
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Installer et compiler
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build

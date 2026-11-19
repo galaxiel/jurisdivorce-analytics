@@ -24,6 +24,7 @@ import type {
   PipelineState,
   PreuveSucces,
   RecompenseCalcResult,
+  TendancePoint,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -106,6 +107,7 @@ export function useAnalytics(filters: DecisionFilters) {
     scatter: useApi<PCCorrelationPoint[]>(`/api/stats/pc-correlation${qs}`),
     motifs: useApi<MotifRejet[]>(`/api/stats/top-motifs-rejet${qs}`),
     preuves: useApi<PreuveSucces[]>(`/api/stats/recompenses-par-preuve${qs}`),
+    tendances: useApi<TendancePoint[]>(`/api/stats/tendances${qs}`),
   };
 }
 

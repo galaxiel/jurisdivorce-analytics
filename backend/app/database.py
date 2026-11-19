@@ -131,3 +131,39 @@ def ensure_pipeline_tables() -> None:
             for col, coltype in cols.items():
                 if col not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"))
+        ensure_fts(conn)
+
+
+# Statements séparés : les triggers contiennent des ';' (BEGIN…END), pas de split naïf
+FTS_STATEMENTS = [
+    "CREATE VIRTUAL TABLE IF NOT EXISTS decisions_fts USING fts5(id UNINDEXED, resume, resume_peda)",
+    """CREATE TRIGGER IF NOT EXISTS decisions_fts_ins AFTER INSERT ON decisions BEGIN
+       DELETE FROM decisions_fts WHERE id = new.id;
+       INSERT INTO decisions_fts (id, resume, resume_peda)
+       VALUES (new.id, new.resume_3_lignes, new.resume_pedagogique); END""",
+    """CREATE TRIGGER IF NOT EXISTS decisions_fts_del AFTER DELETE ON decisions BEGIN
+       DELETE FROM decisions_fts WHERE id = old.id; END""",
+    """CREATE TRIGGER IF NOT EXISTS decisions_fts_upd AFTER UPDATE ON decisions BEGIN
+       DELETE FROM decisions_fts WHERE id = old.id;
+       INSERT INTO decisions_fts (id, resume, resume_peda)
+       VALUES (new.id, new.resume_3_lignes, new.resume_pedagogique); END""",
+]
+
+
+def ensure_fts(conn) -> None:
+    """Index plein texte FTS5 sur les résumés, tenu à jour par triggers.
+
+    L'index est reconstruit si désynchronisé (ex : écritures directes du pipeline
+    effectuées avant la création des triggers)."""
+    from sqlalchemy import text
+
+    for stmt in FTS_STATEMENTS:
+        conn.execute(text(stmt))
+    n_fts = conn.execute(text("SELECT COUNT(*) FROM decisions_fts")).scalar()
+    n_dec = conn.execute(text("SELECT COUNT(*) FROM decisions")).scalar()
+    if n_fts != n_dec:
+        conn.execute(text("DELETE FROM decisions_fts"))
+        conn.execute(text(
+            "INSERT INTO decisions_fts (id, resume, resume_peda) "
+            "SELECT id, resume_3_lignes, resume_pedagogique FROM decisions"
+        ))

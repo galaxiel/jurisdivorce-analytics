@@ -11,6 +11,7 @@ import { NatureSuccessChart } from "@/components/charts/nature-success";
 import { PCDistributionChart } from "@/components/charts/pc-distribution";
 import { PCScatterChart } from "@/components/charts/pc-scatter";
 import { ProofSuccessChart } from "@/components/charts/proof-success";
+import { TendancesChart } from "@/components/charts/tendances";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DecisionFilters } from "@/lib/types";
@@ -20,7 +21,7 @@ import { formatEur, formatPct } from "@/lib/utils";
 export default function AnalyticsPage() {
   const [filters, setFilters] = useState<DecisionFilters>({});
   const facets = useFacets();
-  const { overview, comparatif, pc, abattements, natures, scatter, motifs, preuves } = useAnalytics(filters);
+  const { overview, comparatif, pc, abattements, natures, scatter, motifs, preuves, tendances } = useAnalytics(filters);
 
   function onExport(format: "csv" | "json") {
     window.open(exportUrl(filters, format), "_blank");
@@ -64,6 +65,18 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {comparatif.loading ? <Skeleton className="h-80 w-full" /> : <BarComparatif data={comparatif.data ?? []} />}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Tendances par année</CardTitle>
+            <CardDescription>
+              PC médiane, abattement médian et taux de succès — l&apos;évolution de la pratique judiciaire.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {tendances.loading ? <Skeleton className="h-80 w-full" /> : <TendancesChart data={tendances.data ?? []} />}
           </CardContent>
         </Card>
 

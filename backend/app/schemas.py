@@ -99,6 +99,14 @@ class Facets(BaseModel):
     natures: List[str]
 
 
+class TendancePoint(BaseModel):
+    annee: int
+    nb_decisions: int
+    abattement_median_pct: Optional[float]
+    pc_mediane: Optional[float]
+    taux_succes_pct: Optional[float]
+
+
 # ---------------------------------------------------------------- Décisions
 class RecompenseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

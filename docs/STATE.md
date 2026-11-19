@@ -29,6 +29,11 @@ GLM Flash Zhipu (API openai-compliant) pour l'extraction.
 | **V3 — Chantier 1 (robustesse)** | SQLite **WAL + busy_timeout** (backend & pipeline) · **BatchWriter** (file d'écriture dédiée, lots de 25, 60/60 écrits en test) · règle **null vs 0** (prompt + `norm_amount` + `REJETE → 0`) · **DLQ `failed_decisions`** + bouton « Relancer les échecs » (+ CLI `retry-failed`) + backoff 429/**503** · **normalisation juridictions/régimes** (`normalize_juridiction` : « CA PARIS » → « Cour d'appel de Paris ») · `.env` lu (python-dotenv) · **config à chaud** (`app_config` relecture à chaque décision : concurrence/modèle/max_chars) · streaming `tarfile r|*` + tri archives par date/taille + compteur **fichiers XML/JSON lus vs retenus** |
 | **V3 — Chantier 2 (métier)** | `/api/calculateur/occupation` (art. 815-9 : abattement médian de la cour, **alerte prescription quinquennale**, 10 arrêts comparables — vérifié : 71 mois → dépassement 11 mois) · `/api/calculateur/recompense` (art. 1469 : profit subsistant vs dépense faite + taux rejet amélioration/entretien) · **`/calculateur`** (2 onglets + export) · **`/pieges`** (10 motifs, %, montant moyen perdu, arrêts illustratifs — 842 rejets analysés) · **« Dire à Notaire »** Markdown/Word(.doc)/PDF depuis Simulateur & Calculateur (`lib/dossier.ts`) · **mode démo** : `/api/demo/seed` (50 arrêts `is_demo`) + purge 1 clic + bandeau auto si base < 50 · **benchmark** `/api/pipeline/benchmark` |
 | **V3 — Chantier 3 (qualité)** | `/api/health` enrichi (DB, disque, worker, version 3.0) + **dot de santé dans la navbar** · badge `warning` ambre ajouté au thème · build 10/10 routes · routes `/calculateur`, `/pieges` vérifiées navigateur |
+| **V4 (autonome) — Recherche FTS5** | Index `decisions_fts` + triggers INSERT/UPDATE/DELETE + rebuild auto si désync (`ensure_fts`) ; `q=` passe par FTS (AND de phrases, repli LIKE) | pytest `test_recherche_fts` ✓ |
+| **V4 — Analytics temporelles** | `/api/stats/tendances` (par année : volume, abattement médian, PC médiane, taux succès) + graphique `TendancesChart` dans le Cockpit | pytest + vérifié navigateur |
+| **V4 — Suite pytest formelle** | `tests/` (conftest sys.path) : **26 tests verts** — filtre, normalisation, null/0, repair_json, troncature, XML DILA, limiteur, BatchWriter, 20 routes API, calculateur, pièges, tendances, FTS, démo, config, export | `pytest tests -q` → 26 passed |
+| **V4 — CI GitHub Actions** | `.github/workflows/ci.yml` : backend (deps → seed → pytest → dry-run pipeline) + frontend (npm ci → build) sur chaque push | run à vérifier sur le push |
+| **V4 — Multi-fonds réels** | **CAPP 2 001 conservées** (26 k parcourues) + **CASS 785 conservées (145 421 fichiers XML lus)** — deux fonds traités en autonomie, manifest `done` ×2 | `/api/pipeline/archives` |
 
 **Données actuelles** : `backend/jurisprudence.db` = 1 135 décisions `SYNTHETIQUE_DEMO`
 (seed v2) + tables pipeline (`pipeline_state`, `pipeline_logs`, `processed_archives` avec
@@ -41,13 +46,11 @@ l'archive CAPP réelle).
    `python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurrency 50 --max-chars 16000`.
 2. **API PISTE / Judilibre officielle** (Phase 4) : abstraction `JudilibreClient` à créer
    dans `pipeline/` pour dépasser le périmètre freemium (26 k décisions CAPP publiques).
-3. **CI GitHub Actions** (build frontend + smoke backend à chaque push) — dépôt prêt, workflow absent.
-4. **Tests unitaires formels** (pytest pour filter/predictor/repair_json/normalize, vitest front) —
-   aujourd'hui validations via smoke scripts heredoc dans `AGENTS.md`.
-5. **Export PDF vrai côté serveur** (actuellement : Markdown + Word .doc + `window.print()`).
-6. **Recherche sémantique** (embeddings) — l'explorateur est plein texte LIKE.
-7. **Postgres + agrégats SQL** — voir piège « stats agrégées en Python » dans `AGENTS.md`.
-8. **Monétisation / auth** (Phase 4) — aucune authentification aujourd'hui.
+3. **Recherche sémantique à vecteurs** (embeddings) — le plein texte FTS5 est en place ;
+   la couche embeddings se brancherait dans `services/query.py`.
+4. **Postgres + agrégats SQL** — voir piège « stats agrégées en Python » dans `AGENTS.md`.
+5. **Monétisation / auth** (Phase 4) — aucune authentification aujourd'hui.
+6. Tests frontend (vitest) — le backend est couvert par `tests/` (26 tests verts).
 
 ## Limitations connues (assumées, à ne pas considérer comme des bugs)
 

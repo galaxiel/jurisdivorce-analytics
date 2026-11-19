@@ -140,6 +140,14 @@ export interface Facets {
   natures: string[];
 }
 
+export interface TendancePoint {
+  annee: number;
+  nb_decisions: number;
+  abattement_median_pct: number | null;
+  pc_mediane: number | null;
+  taux_succes_pct: number | null;
+}
+
 export interface RecompenseOut {
   id: number;
   categorie: string | null;
