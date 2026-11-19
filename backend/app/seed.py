@@ -21,9 +21,9 @@ random.seed(42)
 JURIDICTIONS = [
     ("Cour d'appel de Paris", 205), ("Cour d'appel de Versailles", 160),
     ("Cour d'appel de Lyon", 130), ("Cour d'appel d'Aix-en-Provence", 120),
-    ("Cour d'appel de Marseille", 100), ("Cour d'appel de Rennes", 75),
+    ("Cour d'appel de Nîmes", 100), ("Cour d'appel de Rennes", 75),
     ("Cour d'appel de Bordeaux", 75), ("Cour d'appel de Lille", 70),
-    ("Cour d'appel de Nantes", 60), ("Cour d'appel de Toulouse", 60),
+    ("Cour d'appel d'Agen", 60), ("Cour d'appel de Toulouse", 60),
     ("Cour d'appel de Montpellier", 45), ("Cour d'appel de Pau", 35),
 ]
 REGIMES = [

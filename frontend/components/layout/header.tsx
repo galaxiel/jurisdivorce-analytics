@@ -19,7 +19,7 @@ const LINKS = [
 export function Header() {
   const pathname = usePathname();
   const { data: health } = useHealth();
-  const healthy = health ? health.db_ok && health.disk_free_gb > 1 : null;
+  const healthy = health ? health.db_ok && (health.disk_free_gb ?? 1) > 1 : null;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -31,14 +31,19 @@ export function Header() {
           <span className="hidden sm:inline">
             JurisDivorce <span className="text-primary">Analytics</span>
           </span>
-          {/* Chantier 3 : indicateur de santé discret (DB + disque) */}
+          {/* Indicateur de santé discret + source de données active */}
           <span
-            title={health ? `API : ${health.status} · ${health.decisions} décisions · ${health.disk_free_gb} Go libres · worker : ${health.worker_status}` : "Vérification…"}
+            title={health ? `API : ${health.status} · ${health.decisions} décisions · worker : ${health.worker_status}` : "Vérification…"}
             className={cn(
               "ml-1 h-2 w-2 rounded-full",
               healthy === null ? "bg-muted-foreground/40" : healthy ? "bg-success" : "bg-destructive",
             )}
           />
+          {health?.source === "snapshot" && (
+            <span className="hidden xl:inline ml-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
+              Snapshot Open Data · {health.decisions} décisions
+            </span>
+          )}
         </Link>
 
         <nav className="flex items-center gap-0.5">

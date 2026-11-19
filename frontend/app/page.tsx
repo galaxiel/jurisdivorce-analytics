@@ -72,7 +72,7 @@ export default function LandingPage() {
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Button asChild size="lg">
-            <Link href="/boussole">
+            <Link href="/simulateur">
               Simuler mon cas <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>

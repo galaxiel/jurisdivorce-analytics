@@ -131,13 +131,18 @@ def repair_json(raw: str) -> Dict[str, Any]:
 # NORMALISATION JURIDICTIONS / RÉGIMES (anti-doublons dans les comparatifs)
 # ---------------------------------------------------------------------------
 _APPEL_CITIES = [
-    "Aix-en-Provence", "Ajaccio", "Amiens", "Angers", "Basse-Terre", "Besançon",
-    "Bordeaux", "Caen", "Cayenne", "Chambéry", "Clermont-Ferrand", "Colmar",
-    "Dijon", "Douai", "Fort-de-France", "Grenoble", "Limoges", "Lille", "Lyon",
-    "Metz", "Montpellier", "Nancy", "Nantes", "Nouméa", "Orléans", "Papeete",
-    "Paris", "Pau", "Perpignan", "Poitiers", "Reims", "Rennes", "Riom", "Rouen",
-    "Toulouse", "Tours", "Troyes", "Versailles",
+    "Aix-en-Provence", "Agen", "Amiens", "Angers", "Basse-Terre", "Bastia",
+    "Besançon", "Bordeaux", "Bourges", "Caen", "Cayenne", "Chambéry", "Colmar",
+    "Dijon", "Douai", "Fort-de-France", "Grenoble", "Limoges", "Lyon", "Metz",
+    "Montpellier", "Nancy", "Nîmes", "Nouméa", "Orléans", "Papeete", "Paris",
+    "Pau", "Poitiers", "Reims", "Rennes", "Riom", "Rouen", "Saint-Denis",
+    "Toulouse", "Versailles",
 ]
+# Villes sans Cour d'appel → ressort canonique (Marseille → Aix-en-Provence, Nantes → Rennes)
+_APPEL_ALIASES = {
+    "marseille": "Aix-en-Provence",
+    "nantes": "Rennes",
+}
 
 
 def normalize_juridiction(name: Optional[str]) -> Optional[str]:
@@ -150,7 +155,11 @@ def normalize_juridiction(name: Optional[str]) -> Optional[str]:
         return name.strip()
     for city in _APPEL_CITIES:
         if normalize_text(city) in n:
-            prefix = "d'" if normalize_text(city).startswith(("a", "e", "i", "o", "u")) else "de "
+            prefix = "d'" if normalize_text(city)[:1] in "aeiou" else "de "
+            return f"Cour d'appel {prefix}{city}"
+    for alias, city in _APPEL_ALIASES.items():
+        if alias in n:
+            prefix = "d'" if city[:1].lower() in "aeiou" else "de "
             return f"Cour d'appel {prefix}{city}"
     return name.strip()
 

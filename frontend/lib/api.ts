@@ -8,6 +8,7 @@ import type {
   CourComparatif,
   DecisionDetail,
   DecisionFilters,
+  DecisionListItem,
   DecisionList,
   Facets,
   Benchmark,
@@ -29,16 +30,127 @@ import type {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    throw new Error((detail as { detail?: string } | null)?.detail ?? `Erreur API ${res.status}`);
+/* ── Fallback statique : si l'API ne répond pas, bascule silencieuse sur /data/*.json ── */
+export type ApiSource = "live" | "snapshot" | "unknown";
+let apiSource: ApiSource = "unknown";
+export function getApiSource(): ApiSource {
+  return apiSource;
+}
+function setApiSource(s: ApiSource) {
+  if (apiSource !== s) {
+    apiSource = s;
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("api-source", { detail: s }));
+    }
   }
-  return res.json() as Promise<T>;
+}
+
+const FALLBACK_MAP: [RegExp, string][] = [
+  [/^\/api\/stats\/overview\b/, "/data/stats_globales.json"],
+  [/^\/api\/stats\/comparatif-cours\b/, "/data/stats_par_cour.json"],
+  [/^\/api\/stats\/tendances\b/, "/data/tendances.json"],
+  [/^\/api\/stats\/distribution-pc\b/, "/data/distribution_pc.json"],
+  [/^\/api\/stats\/abattement-distribution\b/, "/data/abattements.json"],
+  [/^\/api\/stats\/succes-par-nature\b/, "/data/natures.json"],
+  [/^\/api\/stats\/pc-correlation\b/, "/data/scatter.json"],
+  [/^\/api\/stats\/top-motifs-rejet\b/, "/data/motifs.json"],
+  [/^\/api\/stats\/recompenses-par-preuve\b/, "/data/preuves.json"],
+  [/^\/api\/stats\/pieges\b/, "/data/pieges_top10.json"],
+  [/^\/api\/stats\/facets\b/, "/data/facets.json"],
+  [/^\/api\/health\b/, "/data/health.json"],
+  [/^\/api\/demo\/count\b/, "/data/health.json"],
+  [/^\/api\/decisions\b/, "/data/decisions_index.json"],
+];
+
+type SnapshotDecision = DecisionListItem & {
+  resume_pedagogique?: string | null;
+  bien_immobilier_principal?: boolean | null;
+  pc_demandee?: boolean | null;
+  pc_forme?: string | null;
+  article_700_montant?: number | null;
+  partage_depens?: string | null;
+  delai_procedure_mois?: number | null;
+  conseil_pratique?: string | null;
+  recompenses?: Array<{
+    id: number; categorie: string | null; demandeur: string | null;
+    montant_reclame: number | null; montant_accorde: number | null;
+    statut: string | null; preuve_type: string | null;
+    preuve_clef_retenue: string | null; motif_echec: string | null;
+    regle_calcul: string | null; preuves: string[];
+  }>;
+};
+
+function filterDecisionsSnapshot(items: SnapshotDecision[], sp: URLSearchParams): DecisionList {
+  const g = (k: string) => sp.get(k) ?? "";
+  let out = items;
+  const v = g("juridiction"); if (v) out = out.filter((d) => d.juridiction === v);
+  const y = g("annee"); if (y) out = out.filter((d) => (d.date_decision ?? "").startsWith(y));
+  const rg = g("regime"); if (rg) out = out.filter((d) => d.regime_matrimonial === rg);
+  const tp = g("type_procedure"); if (tp) out = out.filter((d) => d.type_procedure === tp);
+  const nat = g("nature_reclamation"); if (nat) out = out.filter((d) => (d.recompenses ?? []).some((r) => r.categorie === nat));
+  const is = g("issue"); if (is) out = out.filter((d) => (d.recompenses ?? []).some((r) => r.statut === is));
+  const hi = g("has_immo"); if (hi) out = out.filter((d) => String(d.bien_immobilier_principal) === hi);
+  if (g("montant_min")) out = out.filter((d) => (d.occupation_montant_total ?? d.pc_montant_capital ?? 0) >= Number(g("montant_min")));
+  if (g("montant_max")) out = out.filter((d) => (d.occupation_montant_total ?? d.pc_montant_capital ?? Number.MAX_SAFE_INTEGER) <= Number(g("montant_max")));
+  const qq = g("q").toLowerCase();
+  if (qq) {
+    out = out.filter((d) =>
+      `${d.resume_3_lignes ?? ""} ${d.resume_pedagogique ?? ""} ${d.juridiction ?? ""} ${d.numero_rg ?? ""}`
+        .toLowerCase()
+        .includes(qq),
+    );
+  }
+  const total = out.length;
+  const page = Math.max(1, Number(g("page") || 1));
+  const ps = Math.max(1, Number(g("page_size") || 10));
+  return { total, page, page_size: ps, items: out.slice((page - 1) * ps, page * ps) };
+}
+
+async function fetchFallback(path: string): Promise<unknown | null> {
+  for (const [re, file] of FALLBACK_MAP) {
+    if (re.test(path)) {
+      try {
+        const res = await fetch(file);
+        if (!res.ok) return null;
+        const data = (await res.json()) as unknown;
+        setApiSource("snapshot");
+        return data;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error((detail as { detail?: string } | null)?.detail ?? `Erreur API ${res.status}`);
+    }
+    setApiSource("live");
+    return (await res.json()) as T;
+  } catch (err) {
+    // Repli statique : la source de données pré-agrégée (frontend/public/data/)
+    const fb = (await fetchFallback(path)) as unknown;
+    if (fb === null) throw err;
+    if (Array.isArray(fb) && /^\/api\/decisions(\?|$)/.test(path)) {
+      const qs = path.split("?")[1] ?? "";
+      return filterDecisionsSnapshot(fb as SnapshotDecision[], new URLSearchParams(qs)) as T;
+    }
+    if (!Array.isArray(fb) && /^\/api\/decisions\/.+$/.test(path)) {
+      const id = decodeURIComponent(path.split("/").pop() ?? "");
+      const item = (fb as SnapshotDecision[]).find((d) => d.id === id);
+      if (item) return item as T;
+      throw new Error("Décision introuvable dans le snapshot");
+    }
+    return fb as T;
+  }
 }
 
 function toQuery(params: object): string {

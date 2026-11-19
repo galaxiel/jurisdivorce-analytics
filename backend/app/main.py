@@ -65,7 +65,8 @@ def health(db=Depends(get_db)):
         "disk_free_gb": disk_free_gb,
         "decisions": db.query(Decision).count(),
         "worker_status": worker,
-        "version": "3.0",
+        "version": "3.0.1",
+        "source": "live",
     }
     return HealthStatus(**result)
 

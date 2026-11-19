@@ -48,6 +48,11 @@ def test_normalize_juridiction():
     assert normalize_juridiction("Cour d'appel d'AIX-EN-PROVENCE") == "Cour d'appel d'Aix-en-Provence"
     assert normalize_juridiction("Tribunal de grande instance de Lyon") == "Tribunal de grande instance de Lyon"
 
+def test_normalize_juridiction_alias_villes_sans_ca():
+    # Marseille relève d'Aix-en-Provence ; Nantes de Rennes — ces CA n'existent pas
+    assert normalize_juridiction("Cour d'appel de Marseille") == "Cour d'appel d'Aix-en-Provence"
+    assert normalize_juridiction("CA NANTES") == "Cour d'appel de Rennes"
+
 def test_normalize_regime():
     assert normalize_regime("Séparation de biens") == "SEPARATION_DE_BIENS"
     assert normalize_regime("communauté réduite aux acquêts") == "COMMUNAUTE_REDUITE_AUX_ACQUETS"

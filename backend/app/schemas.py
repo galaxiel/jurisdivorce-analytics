@@ -264,10 +264,11 @@ class Benchmark(BaseModel):
 class HealthStatus(BaseModel):
     status: str
     db_ok: bool
-    disk_free_gb: float
+    disk_free_gb: float | None
     decisions: int
     worker_status: str
     version: str
+    source: str = "live"
 
 
 # ---------------------------------------------------------------- Chantier 2

@@ -34,20 +34,24 @@ export const REGLE_LABELS: Record<string, string> = {
   "Rejeté": "Rejeté",
 };
 
-export const JURIDICTIONS = [
-  "Cour d'appel de Paris",
-  "Cour d'appel de Versailles",
-  "Cour d'appel de Lyon",
-  "Cour d'appel d'Aix-en-Provence",
-  "Cour d'appel de Marseille",
-  "Cour d'appel de Rennes",
-  "Cour d'appel de Bordeaux",
-  "Cour d'appel de Lille",
-  "Cour d'appel de Nantes",
-  "Cour d'appel de Toulouse",
-  "Cour d'appel de Montpellier",
-  "Cour d'appel de Pau",
-];
+/* Les 36 Cours d'appel officielles françaises (Marseille relève d'Aix-en-Provence,
+   Nantes de Rennes — ces deux « cours » n'existent pas). */
+export const COURS_APPEL_OFFICIELLES = [
+  "Cour d'appel d'Aix-en-Provence", "Cour d'appel d'Agen", "Cour d'appel d'Amiens",
+  "Cour d'appel d'Angers", "Cour d'appel de Basse-Terre", "Cour d'appel de Bastia",
+  "Cour d'appel de Besançon", "Cour d'appel de Bordeaux", "Cour d'appel de Bourges",
+  "Cour d'appel de Caen", "Cour d'appel de Cayenne", "Cour d'appel de Chambéry",
+  "Cour d'appel de Colmar", "Cour d'appel de Dijon", "Cour d'appel de Douai",
+  "Cour d'appel de Fort-de-France", "Cour d'appel de Grenoble", "Cour d'appel de Limoges",
+  "Cour d'appel de Lyon", "Cour d'appel de Metz", "Cour d'appel de Montpellier",
+  "Cour d'appel de Nancy", "Cour d'appel de Nîmes", "Cour d'appel de Nouméa",
+  "Cour d'appel d'Orléans", "Cour d'appel de Papeete", "Cour d'appel de Paris",
+  "Cour d'appel de Pau", "Cour d'appel de Poitiers", "Cour d'appel de Reims",
+  "Cour d'appel de Rennes", "Cour d'appel de Riom", "Cour d'appel de Rouen",
+  "Cour d'appel de Saint-Denis", "Cour d'appel de Toulouse", "Cour d'appel de Versailles",
+] as const;
+
+export const JURIDICTIONS: readonly string[] = COURS_APPEL_OFFICIELLES;
 
 export const PROOF_OPTIONS = [
   { value: "FACTURE_NOMINATIVE", label: "Factures nominatives" },
@@ -345,10 +349,11 @@ export interface Benchmark {
 export interface HealthStatus {
   status: string;
   db_ok: boolean;
-  disk_free_gb: number;
+  disk_free_gb: number | null;
   decisions: number;
   worker_status: string;
   version: string;
+  source?: "live" | "snapshot";
 }
 
 /* ------------------------------------------------ Chantier 2 : métier */
