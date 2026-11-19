@@ -1,93 +1,127 @@
 # JurisDivorce Analytics
 
 Plateforme d'analyse statistique et décisionnelle de la jurisprudence française en droit de la
-famille (divorce, liquidation de régime matrimonial & partage) — conformément au cahier des charges.
+famille (divorce, liquidation de régime matrimonial & partage) — **v2 : ingestion massive,
+schéma enrichi, cockpit à filtres croisés, moniteur du pipeline**.
 
 ```
-pipeline/ingest_judilibre_brut.py   →  backend/jurisprudence.db (SQLite)  →  API FastAPI  →  Frontend Next.js
-      (regex 0 token + GLM Flash async)         (colonnes aplanies + JSON brut)     (REST /docs)    (Tailwind, Recharts)
+DILA Open Data (CAPP · CASS · TJ, toutes les archives historiques)
+        │  pipeline/dila.py       — aspirateur récursif + manifest processed_archives
+        ▼
+pipeline/core.py            — filtre normalisé (1 terme fort OU 2 secondaires), dédoublonnage MD5,
+                              troncature par sections (dispositif conservé), réparation JSON
+        ▼
+pipeline/ingest.py          — worker httpx + Semaphore(25-50), tokens trackés, pause/reprise,
+                              heartbeat temps réel (pipeline_state / pipeline_logs)
+        ▼
+backend/jurisprudence.db    — SQLite/Postgres, colonnes aplanies v2 (type_procedure, natures
+                              étendues, montants PC demandés/proposés, écart de revenus, délai…)
+        ▼
+API FastAPI  (filtres croisés partagés /decisions · /stats/* · /export, export CSV/JSON)
+        ▼
+Frontend Next.js  — Cockpit Global · Simulateur « Mon Cas » · Explorateur · Moniteur Pipeline
 ```
 
 ## Arborescence
 
 ```
 jurisdivorce/
-├── backend/                 # API FastAPI (SQLAlchemy, SQLite/Postgres)
+├── backend/                 # API FastAPI v2 (SQLAlchemy, migration auto des colonnes v2)
 │   ├── app/
-│   │   ├── main.py          # point d'entrée + CORS + /docs
-│   │   ├── models.py        # Decision (aplanie) + Recompense
-│   │   ├── schemas.py       # contrats Pydantic = OpenAPI
-│   │   ├── routers/         # stats.py · decisions.py · boussole.py
-│   │   ├── services/        # predictor.py (moteur statistique) · classify.py (preuves)
-│   │   ├── seed.py          # jeu de démonstration SYNTHETIQUE_DEMO (665 décisions)
-│   │   └── database.py
-│   └── jurisprudence.db     # base (créée par seed ou pipeline)
+│   │   ├── main.py          # + ensure_schema() & tables pipeline au démarrage
+│   │   ├── models.py        # Decision v2 + Recompense v2 (nature, règle de calcul, preuves)
+│   │   ├── schemas.py       # contrats Pydantic v2 (filtres croisés, moniteur, cockpit)
+│   │   ├── routers/         # stats.py (8 endpoints filtrés) · decisions.py (+ /export)
+│   │   │                    # boussole.py · pipeline.py (state/logs/control/archives)
+│   │   ├── services/        # query.py (filtres partagés) · predictor.py (checklist/alertes)
+│   │   └── seed.py          # démonstration SYNTHETIQUE_DEMO (1135 décisions)
 ├── pipeline/
-│   └── ingest_judilibre_brut.py   # archives Open Data → GLM Flash → base
-└── frontend/                # Next.js 14 App Router + Tailwind + shadcn-style + Recharts
-    ├── app/                 # page (landing) · analytics · boussole · jurisprudence
-    ├── components/          # ui/ · charts/ · boussole/ · jurisprudence/ · layout/
-    └── lib/                 # api.ts (hooks) · types.ts · utils.ts
+│   ├── core.py              # filtre, troncature, réparation JSON, heartbeat, schéma SQL
+│   ├── dila.py              # aspirateur Open Data multi-fonds (CAPP/CASS/TJ…)
+│   ├── ingest.py            # orchestrateur CLI + worker GLM haute cadence
+│   └── ingest_judilibre_brut.py  # script v1 conservé (autonome)
+└── frontend/                # Next.js 14 — 5 vues, thème centralisé (theme.config.ts)
+    ├── app/                 # page · analytics · simulateur · decisions · pipeline
+    │                        # (/boussole et /jurisprudence redirigent vers les nouvelles)
+    ├── components/          # ui/ · analytics/ (FilterBar, KpiCard, DecisionCard) · charts/
+    │                        # boussole/ (étapes + résultat avec checklist/alertes/export)
+    └── lib/                 # api.ts (hooks + polling pipeline) · types.ts · utils.ts
 ```
 
-## Démarrage
-
-### 1. Backend (port 8000)
+## Démarrage rapide
 
 ```bash
-cd backend
-pip install -r requirements.txt
-python -m app.seed          # données de démonstration (réinitialise la base)
-python -m uvicorn app.main:app --reload --port 8000
-# Swagger : http://127.0.0.1:8000/docs
+# 1. Backend
+cd backend && pip install -r requirements.txt
+python -m app.seed                      # jeu de démonstration (0 token)
+python -m uvicorn app.main:app --reload --port 8000   # Swagger : /docs
+
+# 2. Frontend
+cd frontend && npm install
+npm run dev                             # http://localhost:3000 (ou -- -p 3100)
 ```
 
-### 2. Frontend (port 3000, sinon `-p 3100`)
-
-```bash
-cd frontend
-npm install
-npm run dev                 # ou : npm run dev -- -p 3100 si le 3000 est occupé
-# http://localhost:3000
-```
-
-Variables : `NEXT_PUBLIC_API_URL` (défaut `http://127.0.0.1:8000`), `JURISDIVORCE_DB` (défaut
-`backend/jurisprudence.db`).
-
-### 3. Ingestion réelle (Phase 1 du plan)
+## 🚀 Ingestion massive CAPP + CASS + TJ (passage à l'échelle)
 
 ```bash
 pip install -r pipeline/requirements.txt
-export ZHIPU_API_KEY="votre_clé"
-python pipeline/ingest_judilibre_brut.py export_judilibre_cour_appel_2025.tar.gz --db backend/jurisprudence.db
+export ZHIPU_API_KEY="votre_clé_zhipu"          # quota 300 M tokens/jour sur GLM Flash
+
+# 0) Comptage complet SANS consommer de tokens (recommandé en premier) :
+python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --dry-run
+
+# 1) Campagne complète : TOUTES les archives historiques des 3 fonds :
+python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --analyze
+
+# 2) Pilotage pendant la campagne (CLI ou UI /pipeline) :
+python -m pipeline.ingest status
+python -m pipeline.ingest control pause|resume|stop
 ```
 
-Filtre regex local (0 token) → dédoublonnage MD5 → GLM Flash asynchrone (semaphore 20, backoff
-`tenacity`, `response_format=json_object`) → aplanissement en colonnes requêtables. Les archives
-restent dans un dossier séparé du code. La bascule API PISTE/Judilibre reste un point d'évolution
-(abstraction `JudilibreClient` à ajouter dans `pipeline/`).
+Variables : `MAX_CONCURRENCY` (défaut 25, montez à 50 pour saturer le quota),
+`MAX_CHARS` (défaut 48000 — troncature intelligente : en-tête + motifs financiers +
+dispositif), `JURILIBRE_OPENDATA_URL`, `JURISDIVORCE_MODEL` (défaut `glm-4-flash`).
+
+Ce que fait la campagne :
+
+1. **Aspiration multi-fonds** — parcours récursif de l'index public DILA ; **toutes** les
+   archives `.tar.gz`/`.zip` historiques sont découvertes (pas seulement le dernier mois) ;
+   le manifest `processed_archives` permet la **reprise** (les archives `done` sont ignorées,
+   `--force` pour retraiter).
+2. **Filtre sans faux négatifs** — texte normalisé (minuscules, sans accents) : 1 terme fort
+   (`état liquidatif`, `prestation compensatoire`, `recel de communauté`…) OU ≥2 termes
+   secondaires dans un contexte divorce/époux. La pseudonymisation (`[…]`, `***`) n'est
+   **jamais** un motif de rejet ; seuls les motifs explicitement occultés ou les textes
+   < 1 200 caractères sont écartés.
+3. **Worker haute cadence** — `httpx` + `Semaphore(MAX_CONCURRENCY)`, réparation JSON
+   (balises markdown, virgules finales), dédoublonnage MD5, comptage des tokens/jour.
+4. **Monitoring** — `pipeline_state` (heartbeat temps réel) + `pipeline_logs` alimentent
+   l'UI `/pipeline` : archives parcourues, décisions conservées/analysées, vitesse, tokens,
+   erreurs, boutons Pause/Reprise/Stop.
 
 ## Modules livrés
 
-| Module | Route | Contenu |
+| Vue | Route | Contenu |
 |---|---|---|
-| Landing | `/` | Hero + KPI nationaux + accès modules |
-| Dashboard Analytics | `/analytics` | 6 KPI + comparatif des cours (barres+courbe), distribution PC par durée de mariage, top 5 motifs de rejet, taux de succès par type de preuve |
-| La Boussole « Mon Cas » | `/boussole` | Questionnaire 4 étapes → fourchette min/médiane/max, chances de succès selon les preuves, estimation PC, 5 décisions jumelles (lien profond vers la fiche) |
-| Explorer la Jurisprudence | `/jurisprudence` | Filtres combinés (cour, régime, statut récompense, PC, texte) + fiche détaillée : résumé IA vs extrait brut, badge de fiabilité de la source |
+| Accueil | `/` | Hero + KPIs nationaux + accès modules |
+| **Cockpit Global** | `/analytics` | KPIs réactifs aux filtres croisés + 7 graphiques (comparateur inter-cours, distribution des abattements, succès par nature de réclamation réclamé/obtenu, corrélation durée/écart revenus vs PC, distribution PC, motifs de rejet, succès par preuve) |
+| **Filtres croisés** | sticky, partagé | Cour, année, régime, contentieux, nature de réclamation, issue, immobilier, fourchette de montants, plein texte + **Export CSV/JSON** de la sélection |
+| **Simulateur « Mon Cas »** | `/simulateur` | 4 étapes → fourchettes observées, chances par preuve, **checklist des preuves indispensables** (fréquences issues des arrêts gagnants), **alertes pièges** (fréquences des causes d'échec), 5 décisions jumelles, **dossier de synthèse Markdown + impression PDF** |
+| **Explorateur** | `/decisions` | Cartes avec badges financiers (`Demande X → Obtenu Y`, `IO … abattement Z %`), fiche détaillée (résumé IA vs texte intégral, règles de calcul, preuves déterminantes, conseil pratique) |
+| **Moniteur Pipeline** | `/pipeline` | Statut, archives, compteurs, tokens du jour, vitesse, logs en direct, contrôle pause/reprise/stop |
 
-## Points d'architecture (re-skin facilité)
+## Architecture (re-skin en une passe)
 
-- Thème 100 % variables CSS HSL dans `frontend/app/globals.css` (bloc `:root`/`.dark`).
-- Aucun `fetch` dans les composants d'affichage : tout passe par `lib/api.ts` (`useAnalytics`,
-  `useJurisprudence`, `useDecision`, `postBoussole`).
-- Composants `ui/` atomiques sans dépendance radicale (pas de Radix), remplaçables un à un.
-- Types TypeScript générés à la main depuis `backend/app/schemas.py` — à synchroniser si le schéma
-  d'extraction évolue.
+- `frontend/theme.config.ts` + `app/globals.css` : toute l'identité visuelle (HSL, radius,
+  polices, ombres) est centralisée — changer les valeurs = nouvelle charte, rien d'autre.
+- Aucun `fetch` dans les composants d'affichage : tout passe par `lib/api.ts`.
+- Types TypeScript alignés manuellement sur `backend/app/schemas.py`.
+- Migration légère : `ensure_schema()` ajoute les colonnes v2 en `ALTER TABLE` sans perte.
 
 ## Avertissement
 
-Outil statistique **indicatif** : il ne constitue pas un avis juridique. Les données livrées sont
-synthétiques (`source = SYNTHETIQUE_DEMO`) afin que l'interface soit démontrable sans consommer de
-tokens ; exécuter le pipeline sur les archives Judilibre Open Data remplace ces lignes par de
-vraies décisions (`source = JUDILIBRE_OD`).
+Outil statistique **indicatif** : ne constitue pas un avis juridique. Les données livrées sont
+synthétiques (`source = SYNTHETIQUE_DEMO`) ; exécuter la campagne d'ingestion remplace ces
+lignes par de vraies décisions (`source = JUDILIBRE_OD`). Les archives téléchargées vont dans
+`archives/` (jamais dans le code) et sont supprimées après traitement (`--keep-archives` pour
+les conserver).

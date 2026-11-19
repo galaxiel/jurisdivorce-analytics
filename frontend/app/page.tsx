@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BarChart3, Compass, Library } from "lucide-react";
+import { ArrowRight, BarChart3, Compass, Library, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,20 +13,26 @@ const MODULES = [
   {
     href: "/analytics",
     icon: BarChart3,
-    title: "Dashboard Analytics",
-    text: "Taux d'abattement moyen sur l'indemnité d'occupation, montants des récompenses, comparatif des Cours d'appel, top des motifs de rejet.",
+    title: "Cockpit Global",
+    text: "KPIs réactifs aux filtres croisés : abattements d'occupation, comparateur inter-cours, taux de succès par nature de réclamation, corrélation PC.",
   },
   {
-    href: "/boussole",
+    href: "/simulateur",
     icon: Compass,
-    title: "La Boussole — Mon Cas",
-    text: "Questionnaire en 4 étapes : fourchette d'indemnité d'occupation, chances de succès selon vos preuves, 5 décisions jumelles.",
+    title: "Simulateur « Mon Cas »",
+    text: "Questionnaire en 4 étapes : fourchettes observées, checklist des preuves indispensables, alertes pièges et dossier de synthèse exportable.",
   },
   {
-    href: "/jurisprudence",
+    href: "/decisions",
     icon: Library,
     title: "Explorer la Jurisprudence",
-    text: "Moteur de recherche à filtres combinés : cour d'appel, régime matrimonial, statut des récompenses, prestation compensatoire.",
+    text: "Recherche plein texte et filtres multicritères, cartes lisibles d'un coup d'œil avec badges financiers, export CSV/JSON.",
+  },
+  {
+    href: "/pipeline",
+    icon: Radio,
+    title: "Moniteur du Pipeline",
+    text: "Avancement du téléchargement des archives Open Data (CAPP · CASS · TJ), file d'attente GLM Flash, tokens consommés, logs en direct.",
   },
 ];
 
@@ -77,7 +83,7 @@ export default function LandingPage() {
         ))}
       </section>
 
-      <section className="grid gap-4 pb-16 md:grid-cols-3">
+      <section className="grid gap-4 pb-16 md:grid-cols-2 xl:grid-cols-4">
         {MODULES.map((m) => (
           <Link key={m.href} href={m.href} className="group">
             <Card className="h-full transition-shadow group-hover:shadow-md">

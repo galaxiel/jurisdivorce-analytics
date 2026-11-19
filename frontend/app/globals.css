@@ -2,55 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Thème HSL par variables — re-skin instantané en changeant ce bloc (cahier des charges §5.2) */
+/* Thème HSL par variables — re-skin instantané (cf. theme.config.ts) */
 @layer base {
   :root {
-    --background: 220 33% 98%;
-    --foreground: 222 47% 11%;
+    --background: 210 40% 98%;
+    --foreground: 224 50% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --surface: 0 0% 100%;
+    --card-foreground: 224 50% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 211 74% 38%;
+    --popover-foreground: 224 50% 10%;
+    --primary: 224 76% 48%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 92%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 16% 45%;
-    --accent: 199 89% 40%;
+    --secondary: 214 32% 94%;
+    --secondary-foreground: 224 50% 10%;
+    --muted: 214 32% 95%;
+    --muted-foreground: 215 16% 46%;
+    --accent: 172 66% 40%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
+    --destructive: 356 74% 50%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 69% 31%;
+    --success: 160 74% 34%;
     --success-foreground: 0 0% 100%;
-    --border: 214 32% 88%;
-    --input: 214 32% 82%;
-    --ring: 211 74% 38%;
+    --border: 214 30% 90%;
+    --input: 214 30% 84%;
+    --ring: 224 76% 48%;
     --radius: 0.75rem;
   }
 
   .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 96%;
-    --card: 222 44% 11%;
-    --card-foreground: 210 40% 96%;
-    --popover: 222 44% 11%;
-    --popover-foreground: 210 40% 96%;
-    --primary: 211 76% 48%;
-    --primary-foreground: 222 47% 7%;
-    --secondary: 217 28% 17%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 217 28% 15%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 199 89% 48%;
-    --accent-foreground: 222 47% 7%;
-    --destructive: 0 63% 48%;
+    --background: 228 34% 6%;
+    --foreground: 214 32% 96%;
+    --card: 228 30% 9%;
+    --surface: 228 30% 9%;
+    --card-foreground: 214 32% 96%;
+    --popover: 228 30% 9%;
+    --popover-foreground: 214 32% 96%;
+    --primary: 224 82% 58%;
+    --primary-foreground: 228 34% 6%;
+    --secondary: 226 26% 16%;
+    --secondary-foreground: 214 32% 96%;
+    --muted: 226 26% 13%;
+    --muted-foreground: 215 20% 64%;
+    --accent: 172 66% 45%;
+    --accent-foreground: 228 34% 6%;
+    --destructive: 356 74% 56%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 60% 38%;
-    --success-foreground: 0 0% 100%;
-    --border: 217 30% 22%;
-    --input: 217 30% 26%;
-    --ring: 211 76% 48%;
+    --success: 160 74% 42%;
+    --success-foreground: 228 34% 6%;
+    --border: 226 24% 17%;
+    --input: 226 24% 22%;
+    --ring: 224 82% 58%;
   }
 }
 
@@ -60,5 +62,35 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .card-hover {
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .card-hover:hover {
+    box-shadow: 0 4px 16px -2px rgb(15 23 42 / 0.12);
+    transform: translateY(-1px);
+  }
+}
+
+@media print {
+  header, footer, .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
   }
 }

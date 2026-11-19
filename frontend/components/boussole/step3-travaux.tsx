@@ -1,5 +1,6 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { PROOF_OPTIONS, type BoussoleFormState } from "@/lib/types";
@@ -73,6 +74,20 @@ export function Step3Travaux({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Héritage / deniers propres injectés dans le bien (€, optionnel)</Label>
+        <Input
+          type="number"
+          min={0}
+          value={form.heritage_injecte || ""}
+          placeholder="ex : 50 000 € d'héritage investi dans les travaux"
+          onChange={(e) => setForm({ heritage_injecte: Math.max(0, Number(e.target.value) || 0) })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Sans clause de remploi notariée ni traçabilité bancaire, la récompense peut être privée d&apos;effet (nominalisme).
+        </p>
       </div>
 
       <div className="space-y-2">

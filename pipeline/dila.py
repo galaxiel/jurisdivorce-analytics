@@ -1,0 +1,85 @@
+"""Aspirateur multi-fonds Open Data DILA / Judilibre : CAPP, CASS, TJ (et autres).
+
+Étape 1.1 du cahier des charges : parcourt récursivement l'index HTML public de
+`echanges.dila.gouv.fr` (répertoires par fonds/mois → archives `.tar.gz` / `.zip`),
+découvre TOUTES les archives historiques — pas seulement le dernier mois — et
+télécharge en flux vers `archives/` (dossier dédié aux données non fiables,
+jamais dans le code).
+
+L'URL de base est configurable : `JUDILIBRE_OPENDATA_URL`.
+"""
+import asyncio
+import os
+import re
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import unquote, urljoin
+
+import httpx
+
+HREF_RE = re.compile(r'href="([^"?#]+)"', re.IGNORECASE)
+ARCHIVE_RE = re.compile(r"\.(tar\.gz|tgz|zip)$", re.IGNORECASE)
+KNOWN_FONDS = ("CAPP", "CASS", "TJ", "TGE", "TC", "TGO", "CPH", "TOM")
+
+
+def fonds_from_path(url: str) -> str:
+    for segment in unquote(url).split("/"):
+        upper = segment.upper()
+        for fonds in KNOWN_FONDS:
+            if upper == fonds or upper.startswith(fonds + "_"):
+                return fonds
+    return "AUTRE"
+
+
+async def list_archives(client: httpx.AsyncClient, base_url: str,
+                        fonds_filter: Optional[List[str]] = None,
+                        max_archives: Optional[int] = None,
+                        max_depth: int = 4, log=print) -> List[Dict[str, str]]:
+    """Parcours BFS de l'index de fichiers publics ; retourne {url, fonds}."""
+    found: Dict[str, Dict[str, str]] = {}
+    seen_dirs: set = set()
+    queue: List[Tuple[str, int]] = [(base_url, 0)]
+
+    while queue and (max_archives is None or len(found) < max_archives):
+        url, depth = queue.pop(0)
+        if url in seen_dirs or depth > max_depth:
+            continue
+        seen_dirs.add(url)
+        try:
+            response = await client.get(url, timeout=60)
+            response.raise_for_status()
+        except Exception as exc:  # un sous-répertoire manquant ne bloque pas la campagne
+            log(f"[WARN] Index illisible {url} : {exc}")
+            continue
+        for href in HREF_RE.findall(response.text):
+            link = urljoin(url, href)
+            if link.endswith("/"):
+                queue.append((link, depth + 1))
+            elif ARCHIVE_RE.search(link):
+                fonds = fonds_from_path(link)
+                if fonds_filter and fonds not in fonds_filter:
+                    continue
+                if link not in found:
+                    found[link] = {"url": link, "fonds": fonds}
+        await asyncio.sleep(0)
+
+    archives = list(found.values())
+    if max_archives:
+        archives = archives[:max_archives]
+    log(f"[INDEX] {len(archives)} archives découvertes sur {base_url}")
+    return archives
+
+
+async def download_archive(client: httpx.AsyncClient, url: str, dest_dir: str, log=print) -> Tuple[str, int]:
+    """Téléchargement en flux (chunks de 1 Mo) — n'extrait JAMAIS dans le code."""
+    os.makedirs(dest_dir, exist_ok=True)
+    name = unquote(url.split("/")[-1].split("?")[0]) or "archive.tar.gz"
+    path = os.path.join(dest_dir, name)
+    total = 0
+    async with client.stream("GET", url, timeout=None) as response:
+        response.raise_for_status()
+        with open(path, "wb") as file:
+            async for chunk in response.aiter_bytes(1 << 20):
+                file.write(chunk)
+                total += len(chunk)
+    log(f"[DOWNLOAD] {name} ({total / 1e6:.1f} Mo)")
+    return path, total

@@ -1,11 +1,37 @@
-/* Types miroirs de l'API (backend/app/schemas.py) + constantes d'affichage. */
+/* Types miroirs de l'API v2 (backend/app/schemas.py) + constantes d'affichage. */
 
 export const REGIME_LABELS: Record<string, string> = {
   COMMUNAUTE_REDUITE_AUX_ACQUETS: "Communauté réduite aux acquêts",
   SEPARATION_DE_BIENS: "Séparation de biens",
   PARTICIPATION_AUX_ACQUETS: "Participation aux acquêts",
   COMMUNAUTE_UNIVERSELLE: "Communauté universelle",
+  INDIVISION: "Indivision simple / PACS",
   INCONNU: "Inconnu",
+};
+
+export const TYPE_PROCEDURE_LABELS: Record<string, string> = {
+  "Divorce contentieux": "Divorce contentieux",
+  "Liquidation-partage après divorce": "Liquidation-partage",
+  "Indivision hors mariage/PACS": "Indivision hors mariage",
+  "Appel sur ordonnance JAF": "Appel ordonnance JAF",
+};
+
+export const NATURE_FR: Record<string, string> = {
+  TRAVAUX_BIEN_PROPRE: "Travaux amélioration",
+  FINANCEMENT_ACQUISITION: "Financement bien propre",
+  REMBOURSEMENT_EMPRUNT: "Remboursement emprunt",
+  APPORT_FONDS_PROPRES: "Apport fonds propres / héritage",
+  RECEL_COMMUNAUTE: "Recel de communauté",
+  COMPTE_JOINT_VIDE: "Compte joint vidé",
+  TAXES_ASSURANCE: "Taxes foncières / assurance",
+  AUTRE: "Autre",
+};
+
+export const REGLE_LABELS: Record<string, string> = {
+  "Dépense faite": "Dépense faite",
+  "Profit subsistant": "Profit subsistant",
+  Nominalisme: "Nominalisme",
+  "Rejeté": "Rejeté",
 };
 
 export const JURIDICTIONS = [
@@ -50,13 +76,20 @@ export interface KpiOverview {
   taux_echec_sans_factures_pct: number | null;
   pc_taux_accorde_pct: number | null;
   pc_capital_moyen: number | null;
+  pc_capital_median: number | null;
+  taux_succes_recompenses_pct: number | null;
+  article_700_moyen: number | null;
+  total_demande: number | null;
+  total_accorde: number | null;
 }
 
 export interface CourComparatif {
   juridiction: string;
   nb_decisions: number;
   indemnite_moyenne_mensuelle: number | null;
+  indemnite_mediane_mensuelle: number | null;
   abattement_moyen_pct: number | null;
+  taux_acceptation_pct: number | null;
 }
 
 export interface PCDistribution {
@@ -64,6 +97,12 @@ export interface PCDistribution {
   nb_decisions: number;
   capital_moyen: number | null;
   capital_median: number | null;
+}
+
+export interface AbattementBucket {
+  bucket: string;
+  nb_decisions: number;
+  moyenne_indemnite_mensuelle: number | null;
 }
 
 export interface MotifRejet {
@@ -78,6 +117,29 @@ export interface PreuveSucces {
   montant_moyen_accorde: number | null;
 }
 
+export interface NatureSucces {
+  nature: string;
+  nb_reclamations: number;
+  taux_succes_pct: number;
+  montant_moyen_demande: number | null;
+  montant_moyen_accorde: number | null;
+}
+
+export interface PCCorrelationPoint {
+  duree_mariage_annees: number | null;
+  ecart_revenus_mensuel: number | null;
+  capital_accorde: number | null;
+  juridiction: string | null;
+}
+
+export interface Facets {
+  juridictions: string[];
+  annees: number[];
+  regimes: string[];
+  types_procedure: string[];
+  natures: string[];
+}
+
 export interface RecompenseOut {
   id: number;
   categorie: string | null;
@@ -88,6 +150,8 @@ export interface RecompenseOut {
   preuve_type: string | null;
   preuve_clef_retenue: string | null;
   motif_echec: string | null;
+  regle_calcul: string | null;
+  preuves: string[];
 }
 
 export interface DecisionListItem {
@@ -96,14 +160,18 @@ export interface DecisionListItem {
   numero_rg: string | null;
   juridiction: string | null;
   date_decision: string | null;
+  type_procedure: string | null;
   regime_matrimonial: string | null;
   duree_mariage_annees: number | null;
   occupation_accordee: boolean | null;
   occupation_montant_total: number | null;
+  occupation_abattement_pct: number | null;
   pc_accordee: boolean | null;
   pc_montant_capital: number | null;
   nb_recompenses: number;
   taux_reussite_recompenses: number | null;
+  total_demande: number | null;
+  total_accorde: number | null;
   resume_3_lignes: string | null;
 }
 
@@ -117,16 +185,40 @@ export interface DecisionList {
 export interface DecisionDetail extends DecisionListItem {
   chambre: string | null;
   nombre_enfants: number | null;
+  age_epoux_moyen: number | null;
   bien_immobilier_principal: boolean | null;
   valeur_bien_principal: number | null;
   pc_demandee: boolean | null;
   pc_forme: string | null;
+  pc_montant_demande: number | null;
+  pc_montant_propose: number | null;
+  pc_ecart_revenus_mensuel: number | null;
+  pc_criteres: string[];
+  occupation_motif_modulation: string | null;
   article_700_montant: number | null;
   partage_depens: string | null;
+  delai_procedure_mois: number | null;
   recompenses: RecompenseOut[];
   points_forts_gagnants: string[];
   pieges_et_erreurs: string[];
+  resume_pedagogique: string | null;
+  conseil_pratique: string | null;
   raw_excerpt: string | null;
+}
+
+export interface DecisionFilters {
+  juridiction?: string;
+  annee?: string;
+  regime?: string;
+  type_procedure?: string;
+  nature_reclamation?: string;
+  issue?: string;
+  has_immo?: string;
+  montant_min?: string;
+  montant_max?: string;
+  q?: string;
+  page?: number;
+  page_size?: number;
 }
 
 export interface BoussoleRequest {
@@ -139,16 +231,8 @@ export interface BoussoleRequest {
   mois_occupation: number;
   paye_credit: "MOI" | "CONJOINT" | "COMMUN" | "NA";
   travaux: "MOI" | "CONJOINT" | "NA";
+  heritage_injecte?: number;
   preuves: string[];
-}
-
-export interface BoussoleFourchette {
-  min: number;
-  mediane: number;
-  max: number;
-  mois: number;
-  abattement_median_pct: number | null;
-  valeur_locative_utilisee: number | null;
 }
 
 export interface BoussoleFormState {
@@ -161,7 +245,27 @@ export interface BoussoleFormState {
   mois_occupation: number;
   paye_credit: "MOI" | "CONJOINT" | "COMMUN" | "NA";
   travaux: "MOI" | "CONJOINT" | "NA";
+  heritage_injecte: number;
   preuves: string[];
+}
+
+export interface BoussoleFourchette {
+  min: number;
+  mediane: number;
+  max: number;
+  mois: number;
+  abattement_median_pct: number | null;
+  valeur_locative_utilisee: number | null;
+}
+
+export interface ChecklistPreuve {
+  preuve: string;
+  frequence_pct: number;
+}
+
+export interface AlertePiege {
+  piege: string;
+  frequence_pct: number;
 }
 
 export interface BoussoleReport {
@@ -191,13 +295,43 @@ export interface BoussoleReport {
     pc_montant_capital: number | null;
     resume_3_lignes: string | null;
   }[];
+  checklist_preuves: ChecklistPreuve[];
+  alertes_pieges: AlertePiege[];
   notes: string[];
 }
 
-export interface DecisionFilters {
-  juridiction?: string;
-  regime?: string;
-  statut_recompense?: string;
-  presence_pc?: string;
-  q?: string;
+/* ------------------------------------------------ Moniteur du pipeline */
+export interface PipelineState {
+  status: "idle" | "running" | "paused" | "stopped";
+  mode: string | null;
+  current_archive: string | null;
+  archives_done: number;
+  archives_total: number;
+  decisions_scanned: number;
+  decisions_kept: number;
+  decisions_analyzed: number;
+  decisions_failed: number;
+  tokens_today: number;
+  queue_size: number;
+  started_at: string | null;
+  updated_at: string | null;
+  vitesse_par_minute: number | null;
+}
+
+export interface PipelineLog {
+  id: number;
+  ts: string;
+  level: string;
+  message: string;
+}
+
+export interface ArchiveInfo {
+  url: string;
+  fonds: string | null;
+  size_bytes: number | null;
+  status: string;
+  decisions_found: number;
+  decisions_analyzed: number;
+  error: string | null;
+  processed_at: string | null;
 }

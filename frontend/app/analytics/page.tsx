@@ -1,37 +1,43 @@
 "use client";
 
-import { useAnalytics } from "@/lib/api";
+import { useState } from "react";
+import { exportUrl, useAnalytics, useFacets } from "@/lib/api";
+import { FilterBar } from "@/components/analytics/filter-bar";
+import { KpiCard } from "@/components/analytics/kpi-card";
+import { AbattementDistributionChart } from "@/components/charts/abattement-distribution";
 import { BarComparatif } from "@/components/charts/bar-comparatif";
 import { MotifsRejetChart } from "@/components/charts/motifs-rejet";
+import { NatureSuccessChart } from "@/components/charts/nature-success";
 import { PCDistributionChart } from "@/components/charts/pc-distribution";
+import { PCScatterChart } from "@/components/charts/pc-scatter";
 import { ProofSuccessChart } from "@/components/charts/proof-success";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { DecisionFilters } from "@/lib/types";
 import { formatEur, formatPct } from "@/lib/utils";
-import { PROOF_LABELS } from "@/lib/types";
 
+/* Vue 1 — Cockpit Global : KPIs réactifs aux filtres + analytics avancés. */
 export default function AnalyticsPage() {
-  const { overview, comparatif, pc, motifs, preuves } = useAnalytics();
+  const [filters, setFilters] = useState<DecisionFilters>({});
+  const facets = useFacets();
+  const { overview, comparatif, pc, abattements, natures, scatter, motifs, preuves } = useAnalytics(filters);
 
-  const kpis = [
-    { label: "Indemnité d'occupation accordée", value: formatPct(overview.data?.taux_occupation_accordee) },
-    { label: "Abattement moyen appliqué", value: formatPct(overview.data?.abattement_moyen_pct) },
-    { label: "Récompense travaux moyenne accordée", value: formatEur(overview.data?.montant_moyen_recompense_travaux) },
-    { label: "Rejets sans factures nominatives", value: formatPct(overview.data?.taux_echec_sans_factures_pct) },
-    { label: "Prestation compensatoire accordée", value: formatPct(overview.data?.pc_taux_accorde_pct) },
-    { label: "Capital moyen de prestation compensatoire", value: formatEur(overview.data?.pc_capital_moyen) },
-  ];
+  function onExport(format: "csv" | "json") {
+    window.open(exportUrl(filters, format), "_blank");
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6">
       <div>
-        <h1 className="text-2xl font-bold">Dashboard Analytics</h1>
+        <h1 className="text-2xl font-bold">Cockpit Global</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {overview.data
-            ? `${overview.data.total_decisions.toLocaleString("fr-FR")} décisions · ${overview.data.nb_juridictions} cours d'appel · période ${overview.data.periode}`
+            ? `${overview.data.total_decisions.toLocaleString("fr-FR")} décisions · ${overview.data.nb_juridictions} juridictions${overview.data.periode ? ` · ${overview.data.periode}` : ""}`
             : "Chargement des statistiques…"}
         </p>
       </div>
+
+      <FilterBar filters={filters} onChange={setFilters} facets={facets.data} onExport={onExport} />
 
       {overview.error && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -39,22 +45,22 @@ export default function AnalyticsPage() {
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {kpis.map((k) => (
-          <Card key={k.label}>
-            <CardContent className="pt-5">
-              <div className="text-xl font-bold text-primary">{k.value}</div>
-              <p className="mt-1 text-xs text-muted-foreground">{k.label}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <KpiCard label="Arrêts analysés (sélection)" value={overview.data?.total_decisions.toLocaleString("fr-FR") ?? "—"} />
+        <KpiCard label="Succès global des réclamations financières" value={formatPct(overview.data?.taux_succes_recompenses_pct)} tone="success" />
+        <KpiCard label="Médiane prestation compensatoire" value={formatEur(overview.data?.pc_capital_median)} />
+        <KpiCard label="Abattement moyen indemnité d'occupation" value={formatPct(overview.data?.abattement_moyen_pct)} />
+        <KpiCard label="Article 700 moyen" value={formatEur(overview.data?.article_700_moyen)} tone="neutral" />
+        <KpiCard label="Rejets sans factures nominatives" value={formatPct(overview.data?.taux_echec_sans_factures_pct)} tone="destructive" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Comparatif des Cours d'appel</CardTitle>
-            <CardDescription>Indemnité d'occupation mensuelle moyenne et abattement moyen accordé.</CardDescription>
+            <CardTitle className="text-base">Comparateur inter-Cours d&apos;appel</CardTitle>
+            <CardDescription>
+              Indemnité d&apos;occupation mensuelle moyenne et abattement moyen accordé.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {comparatif.loading ? <Skeleton className="h-80 w-full" /> : <BarComparatif data={comparatif.data ?? []} />}
@@ -63,43 +69,61 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="pb-2">
+            <CardTitle className="text-base">Distribution des abattements d&apos;occupation</CardTitle>
+            <CardDescription>Précarité : 15 %, 20 %, 30 %… où se situe votre cour ?</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {abattements.loading ? <Skeleton className="h-72 w-full" /> : <AbattementDistributionChart data={abattements.data ?? []} />}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Succès par nature de réclamation</CardTitle>
+            <CardDescription>Montant réclamé vs obtenu et taux d&apos;acceptation.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {natures.loading ? <Skeleton className="h-80 w-full" /> : <NatureSuccessChart data={natures.data ?? []} />}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Corrélation PC : durée du mariage &amp; écart de revenus</CardTitle>
+            <CardDescription>Chaque point est une prestation compensatoire accordée.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {scatter.loading ? <Skeleton className="h-80 w-full" /> : <PCScatterChart data={scatter.data ?? []} />}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
             <CardTitle className="text-base">Distribution des prestations compensatoires</CardTitle>
             <CardDescription>Selon la durée du mariage.</CardDescription>
           </CardHeader>
-          <CardContent>{pc.loading ? <Skeleton className="h-80 w-full" /> : <PCDistributionChart data={pc.data ?? []} />}</CardContent>
+          <CardContent>
+            {pc.loading ? <Skeleton className="h-80 w-full" /> : <PCDistributionChart data={pc.data ?? []} />}
+          </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Top 5 des motifs de rejet</CardTitle>
-            <CardDescription>Créances entre époux & récompenses rejetées.</CardDescription>
+            <CardDescription>Créances entre époux &amp; récompenses rejetées.</CardDescription>
           </CardHeader>
-          <CardContent>{motifs.loading ? <Skeleton className="h-72 w-full" /> : <MotifsRejetChart data={motifs.data ?? []} />}</CardContent>
+          <CardContent>
+            {motifs.loading ? <Skeleton className="h-72 w-full" /> : <MotifsRejetChart data={motifs.data ?? []} />}
+          </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Taux de succès selon la preuve possédée</CardTitle>
-            <CardDescription>Le nerf de la guerre : la facture nominative change tout.</CardDescription>
-          </CardHeader>
-          <CardContent>{preuves.loading ? <Skeleton className="h-72 w-full" /> : <ProofSuccessChart data={preuves.data ?? []} />}</CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Détail par type de preuve</CardTitle>
+            <CardDescription>La facture nominative change tout.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2 text-sm">
-              {(preuves.data ?? []).map((p) => (
-                <li key={p.preuve_type} className="flex items-center justify-between rounded-md border px-3 py-2">
-                  <span>{PROOF_LABELS[p.preuve_type] ?? p.preuve_type}</span>
-                  <span className="text-muted-foreground">
-                    {p.nb_reclamations} réclamations · {formatPct(p.taux_succes_pct)} · moy. {formatEur(p.montant_moyen_accorde)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {preuves.loading ? <Skeleton className="h-72 w-full" /> : <ProofSuccessChart data={preuves.data ?? []} />}
           </CardContent>
         </Card>
       </div>

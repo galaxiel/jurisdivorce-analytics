@@ -1,15 +1,22 @@
-/* Layer client HTTP + hooks React (cahier des charges §5.2 : aucun fetch dans les composants d'affichage). */
+/* Layer client HTTP + hooks React (aucun fetch dans les composants d'affichage). */
 import { useEffect, useState } from "react";
 import type {
+  AbattementBucket,
+  ArchiveInfo,
   BoussoleReport,
   BoussoleRequest,
   CourComparatif,
   DecisionDetail,
   DecisionFilters,
   DecisionList,
+  Facets,
   KpiOverview,
   MotifRejet,
+  NatureSucces,
+  PCCorrelationPoint,
   PCDistribution,
+  PipelineLog,
+  PipelineState,
   PreuveSucces,
 } from "./types";
 
@@ -36,7 +43,7 @@ function toQuery(params: object): string {
   return s ? `?${s}` : "";
 }
 
-/** Hook générique : refetch automatique quand `path` change. */
+/** Hook générique : refetch quand `path` ou `refreshKey` change. */
 export function useApi<T>(path: string | null, refreshKey = 0) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(Boolean(path));
@@ -70,18 +77,37 @@ export function useApi<T>(path: string | null, refreshKey = 0) {
   return { data, loading, error };
 }
 
+/** Sondage périodique (moniteur du pipeline). */
+export function usePolling<T>(path: string, intervalMs = 3000, refreshKey = 0) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return useApi<T>(path, tick + refreshKey);
+}
+
 /* ------------------------------------------------ Hooks métier */
-export function useAnalytics() {
+export function useAnalytics(filters: DecisionFilters) {
+  const { page: _p, page_size: _ps, ...statFilters } = filters;
+  const qs = toQuery(statFilters);
   return {
-    overview: useApi<KpiOverview>("/api/stats/overview"),
-    comparatif: useApi<CourComparatif[]>("/api/stats/comparatif-cours"),
-    pc: useApi<PCDistribution[]>("/api/stats/distribution-pc"),
-    motifs: useApi<MotifRejet[]>("/api/stats/top-motifs-rejet"),
-    preuves: useApi<PreuveSucces[]>("/api/stats/recompenses-par-preuve"),
+    overview: useApi<KpiOverview>(`/api/stats/overview${qs}`),
+    comparatif: useApi<CourComparatif[]>(`/api/stats/comparatif-cours${qs}`),
+    pc: useApi<PCDistribution[]>(`/api/stats/distribution-pc${qs}`),
+    abattements: useApi<AbattementBucket[]>(`/api/stats/abattement-distribution${qs}`),
+    natures: useApi<NatureSucces[]>(`/api/stats/succes-par-nature${qs}`),
+    scatter: useApi<PCCorrelationPoint[]>(`/api/stats/pc-correlation${qs}`),
+    motifs: useApi<MotifRejet[]>(`/api/stats/top-motifs-rejet${qs}`),
+    preuves: useApi<PreuveSucces[]>(`/api/stats/recompenses-par-preuve${qs}`),
   };
 }
 
-export function useJurisprudence(filters: DecisionFilters & { page?: number; page_size?: number }, refreshKey = 0) {
+export function useFacets(refreshKey = 0) {
+  return useApi<Facets>("/api/stats/facets", refreshKey);
+}
+
+export function useJurisprudence(filters: DecisionFilters, refreshKey = 0) {
   const path = `/api/decisions${toQuery(filters)}`;
   return useApi<DecisionList>(path, refreshKey);
 }
@@ -92,4 +118,30 @@ export function useDecision(id: string | null) {
 
 export async function postBoussole(req: BoussoleRequest): Promise<BoussoleReport> {
   return request<BoussoleReport>("/api/boussole", { method: "POST", body: JSON.stringify(req) });
+}
+
+/* ------------------------------------------------ Pipeline */
+export function usePipelineState(refreshKey = 0) {
+  return usePolling<PipelineState>("/api/pipeline/state", 2500, refreshKey);
+}
+
+export function usePipelineLogs(refreshKey = 0) {
+  return usePolling<PipelineLog[]>("/api/pipeline/logs?limit=80", 3000, refreshKey);
+}
+
+export function usePipelineArchives(refreshKey = 0) {
+  return usePolling<ArchiveInfo[]>("/api/pipeline/archives?limit=60", 6000, refreshKey);
+}
+
+export async function postPipelineControl(action: "pause" | "resume" | "stop"): Promise<PipelineState> {
+  return request<PipelineState>("/api/pipeline/control", {
+    method: "POST",
+    body: JSON.stringify({ action }),
+  });
+}
+
+/* ------------------------------------------------ Export de la sélection */
+export function exportUrl(filters: DecisionFilters, format: "csv" | "json"): string {
+  const { page: _p, page_size: _ps, ...statFilters } = filters;
+  return `${API_BASE}/api/decisions/export${toQuery({ ...statFilters, format })}`;
 }

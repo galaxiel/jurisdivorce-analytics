@@ -1,10 +1,10 @@
-"""Jeu de données de démonstration : ~665 décisions synthétiques réalistes.
+"""Jeu de données de démonstration : ~1135 décisions synthétiques réalistes (schéma v2).
 
 Toutes les lignes sont marquées source='SYNTHETIQUE_DEMO' pour ne jamais être
 confondues avec de vraies décisions JUDILIBRE_OD. Rejouer le script réinitialise
-la base. Les distributions (abattement ~20 %, succès selon la preuve, capital PC
-proportionnel à la durée de mariage) calquent les ordres de grandeur usuels afin
-que les statistiques du dashboard soient plausibles.
+la base (les colonnes v2 du schéma enrichi sont peuplées : type de procédure,
+natures de réclamation étendues, montants PC demandés/proposés, écart de revenus,
+délai de procédure, conseils pratiques…).
 
 Usage : python -m app.seed   (depuis backend/)
 """
@@ -13,18 +13,18 @@ import json
 import random
 from datetime import date, timedelta
 
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, ensure_schema, engine
 from .models import Decision, Recompense
 
 random.seed(42)
 
 JURIDICTIONS = [
-    ("Cour d'appel de Paris", 120), ("Cour d'appel de Versailles", 95),
-    ("Cour d'appel de Lyon", 75), ("Cour d'appel d'Aix-en-Provence", 70),
-    ("Cour d'appel de Marseille", 60), ("Cour d'appel de Rennes", 45),
-    ("Cour d'appel de Bordeaux", 45), ("Cour d'appel de Lille", 40),
-    ("Cour d'appel de Nantes", 35), ("Cour d'appel de Toulouse", 35),
-    ("Cour d'appel de Montpellier", 25), ("Cour d'appel de Pau", 20),
+    ("Cour d'appel de Paris", 205), ("Cour d'appel de Versailles", 160),
+    ("Cour d'appel de Lyon", 130), ("Cour d'appel d'Aix-en-Provence", 120),
+    ("Cour d'appel de Marseille", 100), ("Cour d'appel de Rennes", 75),
+    ("Cour d'appel de Bordeaux", 75), ("Cour d'appel de Lille", 70),
+    ("Cour d'appel de Nantes", 60), ("Cour d'appel de Toulouse", 60),
+    ("Cour d'appel de Montpellier", 45), ("Cour d'appel de Pau", 35),
 ]
 REGIMES = [
     ("COMMUNAUTE_REDUITE_AUX_ACQUETS", 0.62), ("SEPARATION_DE_BIENS", 0.22),
@@ -36,6 +36,10 @@ REGIME_FR = {
     "PARTICIPATION_AUX_ACQUETS": "participation aux acquêts",
     "COMMUNAUTE_UNIVERSELLE": "communauté universelle",
 }
+TYPES_PROCEDURE = [
+    ("Liquidation-partage après divorce", 0.60), ("Divorce contentieux", 0.20),
+    ("Indivision hors mariage/PACS", 0.10), ("Appel sur ordonnance JAF", 0.10),
+]
 CHAMBRES = [
     "Pôle 3 Chambre 1", "Pôle 3 Chambre 2", "Pôle 2 Chambre 4",
     "Chambre familiale", "Pôle 3 Chambre 5",
@@ -49,31 +53,46 @@ PREUVES = [
     ("AUCUNE", "Aucun justificatif probant produit aux débats", 0.06),
 ]
 PREUVE_WEIGHTS = [0.40, 0.25, 0.20, 0.15]
-
-MOTIFS_REJET = {
-    "FACTURE_NOMINATIVE": [
-        "Factures au nom du conjoint : paiement par deniers personnels non établi",
-        "Factures sans mention du mode de règlement ni rapprochement bancaire",
-    ],
-    "RELEVE_BANCAIRE": [
-        "Absence de preuve du paiement par deniers propres : fonds communs présumés",
-        "Relevés bancaires sans corrélation avérée avec les travaux litigieux",
-    ],
-    "ATTESTATION": [
-        "Attestations non contradictoires jugées insuffisantes",
-        "Devis non datés et non chiffrés jugés insuffisants",
-    ],
-    "AUCUNE": [
-        "Absence de justificatifs produits aux débats",
-        "Dépenses non justifiées par aucun document",
-    ],
+PREUVE_LABEL = {
+    "FACTURE_NOMINATIVE": "Factures nominatives",
+    "RELEVE_BANCAIRE": "Relevés bancaires",
+    "ATTESTATION": "Attestations",
+    "AUCUNE": None,
 }
-MOTIFS_NEUTRES = [
-    "Dépenses non nécessaires à la conservation du bien",
+
+# (nature, poids, fourchette de montant, règles de calcul plausibles)
+NATURES = [
+    ("TRAVAUX_BIEN_PROPRE", 0.30, (3_000, 60_000), ["Profit subsistant", "Dépense faite"]),
+    ("FINANCEMENT_ACQUISITION", 0.15, (20_000, 150_000), ["Nominalisme", "Profit subsistant"]),
+    ("REMBOURSEMENT_EMPRUNT", 0.25, (10_000, 120_000), ["Nominalisme", "Dépense faite"]),
+    ("APPORT_FONDS_PROPRES", 0.12, (5_000, 80_000), ["Nominalisme"]),
+    ("RECEL_COMMUNAUTE", 0.08, (5_000, 90_000), ["Dépense faite"]),
+    ("COMPTE_JOINT_VIDE", 0.05, (1_000, 25_000), ["Nominalisme"]),
+    ("TAXES_ASSURANCE", 0.05, (500, 8_000), ["Dépense faite"]),
+]
+NATURE_FR = {
+    "TRAVAUX_BIEN_PROPRE": "Travaux amélioration",
+    "FINANCEMENT_ACQUISITION": "Financement bien propre",
+    "REMBOURSEMENT_EMPRUNT": "Remboursement emprunt immobilier post-séparation",
+    "APPORT_FONDS_PROPRES": "Apport fonds propres / héritage",
+    "RECEL_COMMUNAUTE": "Recel de communauté",
+    "COMPTE_JOINT_VIDE": "Compte joint vidé",
+    "TAXES_ASSURANCE": "Taxes foncières / assurance",
+    "AUTRE": "Autre",
+}
+CAUSES_ECHEC = [
+    "Pas de preuve d'origine propre des fonds",
+    "Dépense relevant de la contribution aux charges du mariage",
     "Prescription de l'action en récompense",
-    "Dépenses engagées sans accord de l'autre époux",
-    "Double comptabilisation avec l'indemnité d'occupation déjà allouée",
-    "Montants non chiffrés avec précision aux débats",
+    "Attestations non contradictoires jugées insuffisantes",
+    "Absence de justificatifs produits aux débats",
+    "Factures au nom du conjoint : paiement personnel non établi",
+    "Relevés bancaires sans corrélation avérée avec les travaux litigieux",
+]
+
+PC_CRITERES = [
+    "Écart de revenus", "Durée du mariage", "Âge des époux",
+    "Perte de chances professionnelles", "État de santé", "Éducation des enfants",
 ]
 
 POINTS_FORTS = [
@@ -81,6 +100,7 @@ POINTS_FORTS = [
     "Cohérence chronologique entre relevés bancaires et travaux",
     "État liquidatif médian chiffré convergent des deux parties",
     "Occupation exclusive avérée par constat de commissaire de justice",
+    "Clause de remploi mentionnée dans l'acte notarié",
     "Valeur locative étayée par estimation d'agence immobilière",
 ]
 PIEGES = [
@@ -90,6 +110,13 @@ PIEGES = [
     "Ignorer la prescription de l'action en récompense",
     "Cumuler des demandes redondantes entre récompenses et créances",
 ]
+CONSEILS = [
+    "Constituer un dossier chronologique : chaque facture rapprochée d'un débit bancaire personnel.",
+    "Faire établir par le notaire un calcul de récompense opposable dès la convocation.",
+    "Chiffrer la valeur locative par une estimation d'agence datée de la séparation.",
+    "Réclamer le recel par rapprochements bancaires des mouvements atypiques de l'année du divorce.",
+    "Surveiller la prescription : agir dans les cinq ans de la connaissance du fait générateur.",
+]
 
 
 def _wchoice(pairs, weights):
@@ -98,11 +125,14 @@ def _wchoice(pairs, weights):
 
 def gen_decision(i: int, jur: str):
     regime = _wchoice([r for r, _ in REGIMES], [w for _, w in REGIMES])
+    type_procedure = _wchoice([t for t, _ in TYPES_PROCEDURE], [w for _, w in TYPES_PROCEDURE])
     duree = max(1, int(random.gauss(14, 8)))
     enfants = random.choices([0, 1, 2, 3, 4], weights=[0.28, 0.30, 0.26, 0.10, 0.06])[0]
+    age_moyen = round(random.uniform(32, 64))
     d = date(2018, 1, 1) + timedelta(days=random.randint(0, 2500))
     chambre = random.choice(CHAMBRES)
     num_rg = random.randint(1000, 9999)
+    delai_mois = random.randint(8, 42)
 
     immo = random.random() < 0.85
     valeur_bien = round(random.uniform(150_000, 900_000), -3) if immo else None
@@ -113,16 +143,29 @@ def gen_decision(i: int, jur: str):
     occ_demandee = immo and random.random() < 0.55
     occ_accordee = occ_demandee and random.random() < 0.78
     occ_mens_base = occ_abat = occ_mens_final = occ_total = occ_mois = None
+    occ_motif = None
     if occ_accordee:
         occ_mens_base = vl_base
         occ_abat = round(min(50.0, max(0.0, random.gauss(20, 9))), 1)
         occ_mens_final = round(vl_base * (1 - occ_abat / 100), 2)
         occ_mois = random.randint(4, 48)
         occ_total = round(occ_mens_final * occ_mois, 2)
+        occ_motif = random.choice([
+            "Abattement pour précarité de l'occupation",
+            "Jouissance gratuite partielle au titre du devoir de secours",
+            "Prise en charge de l'entretien et des charges par l'occupant",
+        ])
 
     pc_demandee = random.random() < 0.45
     pc_accordee = pc_demandee and random.random() < 0.68
     pc_forme = pc_capital = pc_rente = pc_rente_mois = None
+    pc_demande = pc_propose = pc_ecart = None
+    pc_criteres = []
+    if pc_demandee:
+        pc_demande = round(random.uniform(15_000, 180_000), -2)
+        pc_propose = round(pc_demande * random.uniform(0.15, 0.70), -2)
+        pc_ecart = round(random.uniform(400, 6500), 2)
+        pc_criteres = random.sample(PC_CRITERES, 2)
     if pc_accordee:
         roll = random.random()
         if roll < 0.75:
@@ -141,21 +184,13 @@ def gen_decision(i: int, jur: str):
     a700 = round(random.uniform(500, 3000), 2) if random.random() < 0.6 else None
     depens = _wchoice(["DESIGNE_EPOUX_A", "DESIGNE_EPOUX_B", "PARTAGE_MOITIE", "REJET"], [0.35, 0.30, 0.30, 0.05])
 
-    # --- Récompenses / créances entre époux
-    n_rec = 0 if random.random() < 0.35 else random.randint(1, 3)
+    # --- Récompenses / créances entre époux (natures étendues)
+    n_rec = 0 if random.random() < 0.30 else random.randint(1, 3)
     recompenses = []
     recompenses_json = []
     for _ in range(n_rec):
-        cat = _wchoice(
-            ["TRAVAUX_BIEN_PROPRE", "REMBOURSEMENT_EMPRUNT", "APPORT_FONDS_PROPRES", "AUTRE"],
-            [0.40, 0.30, 0.20, 0.10],
-        )
-        montant_reclame = round({
-            "TRAVAUX_BIEN_PROPRE": random.uniform(3_000, 60_000),
-            "REMBOURSEMENT_EMPRUNT": random.uniform(10_000, 120_000),
-            "APPORT_FONDS_PROPRES": random.uniform(5_000, 80_000),
-            "AUTRE": random.uniform(1_000, 20_000),
-        }[cat], 2)
+        nature, _, (lo, hi), regles = _wchoice(NATURES, [n[1] for n in NATURES])
+        montant_reclame = round(random.uniform(lo, hi), 2)
         ptype, ptext, pprob = _wchoice(PREUVES, PREUVE_WEIGHTS)
         demandeur = random.choice(["EPOUX_A", "EPOUX_B"])
         if random.random() < pprob:
@@ -165,23 +200,31 @@ def gen_decision(i: int, jur: str):
                 statut = "ACCORDE_PARTIELLEMENT"
                 accorde = round(montant_reclame * random.uniform(0.4, 0.8), 2)
             preuve, motif = ptext, None
+            regle = random.choice(regles)
+            preuves = [l for l in (PREUVE_LABEL[ptype],) if l]
+            if ptype != "AUCUNE" and random.random() < 0.3:
+                preuves.append("Constats de commissaire de justice")
         else:
             statut, accorde = "REJETE", None
-            preuve = None
-            motif = random.choice(MOTIFS_REJET[ptype] + MOTIFS_NEUTRES)
+            preuve, preuves = None, []
+            motif = random.choice(CAUSES_ECHEC)
+            regle = "Rejeté"
         rec = Recompense(
-            categorie=cat, demandeur=demandeur, montant_reclame=montant_reclame,
+            categorie=nature, demandeur=demandeur, montant_reclame=montant_reclame,
             montant_accorde=accorde, statut=statut, preuve_type=ptype,
             preuve_clef_retenue=preuve, motif_echec=motif,
+            regle_calcul=regle, preuves_json=json.dumps(preuves, ensure_ascii=False),
         )
         recompenses.append(rec)
         recompenses_json.append({
-            "categorie": cat, "demandeur": demandeur,
+            "nature": nature, "demandeur": demandeur,
             "montant_reclame": montant_reclame, "montant_accorde": accorde,
-            "statut": statut, "preuve_clef_retenue": preuve, "motif_echec": motif,
+            "statut": statut, "regle_calcul": regle,
+            "preuves_determinantes": preuves, "preuve_clef_retenue": preuve,
+            "cause_echec": motif,
         })
 
-    # --- Résumé 3 lignes
+    # --- Résumés
     pieces = [f"Liquidation du régime matrimonial après {duree} ans de mariage ({REGIME_FR[regime]})."]
     if occ_accordee:
         pieces.append(f"Indemnité d'occupation de {occ_mens_final:.0f} €/mois pendant {occ_mois} mois, avec abattement de {occ_abat:.0f} %.")
@@ -200,22 +243,30 @@ def gen_decision(i: int, jur: str):
     if n_rec:
         pieces.append(f"{n_ok} récompense(s) ou créance(s) au moins partiellement accordée(s) sur {n_rec}.")
     resume = " ".join(pieces)
+    resume_peda = (
+        f"Après {duree} ans de mariage, la cour a arbitré le partage : "
+        + (f"indemnité d'occupation de {occ_mens_final:.0f} €/mois " if occ_accordee else "")
+        + (f"prestation compensatoire de {pc_capital or pc_rente:.0f} € " if pc_accordee else "")
+        + (f"{n_ok} demande(s) financière(s) sur {n_rec} retenue(s)." if n_rec else "aucune créance entre époux.")
+    ).strip()
 
     valeur_txt = f"{valeur_bien:.0f}" if valeur_bien is not None else "non estimé"
     raw_text = (
         f"COUR D'APPEL — ARRET DU {d.strftime('%d/%m/%Y')} — N° RG {d.year}/{num_rg}\n\n"
-        "AFFAIRE : ÉPOUX X c/ ÉPOUSE Y — DIVORCE — LIQUIDATION DU RÉGIME MATRIMONIAL — ÉTAT LIQUIDATIF.\n\n"
+        f"AFFAIRE : ÉPOUX X c/ ÉPOUSE Y — DIVORCE — LIQUIDATION DU RÉGIME MATRIMONIAL — ÉTAT LIQUIDATIF ({type_procedure.upper()}).\n\n"
         "EXPOSÉ DU LITIGE : Les époux, divorcés par jugement définitif, demeurent en désaccord sur la liquidation "
         f"de leur régime matrimonial. Le domicile conjugal, immeuble estimé à {valeur_txt} €, est demeuré "
         "occupé par l'un des époux depuis la résidence séparée. Des travaux ont été réalisés sur le bien pendant "
         "le mariage ; des récompenses et créances entre époux sont sollicitées, ainsi qu'une indemnité d'occupation "
-        "et une prestation compensatoire.\n\n"
+        "et une prestation compensatoire. Le notaire liquidateur propose un état liquidatif contesté sur les "
+        "récompenses dues et sur la valorisation de l'indivision post-communautaire.\n\n"
         "MOYENS ET DISCUSSION : Sur l'indemnité d'occupation, la valeur locative est déterminée au vu de "
         "l'estimation produite ; l'abattement réservé tient à l'usage partiel du bien et à l'entretien assumé. "
         "Sur les récompenses, seules les dépenses établies par factures nominatives acquittées par deniers "
-        "personnels, ou tracées par relevés bancaires corroborés, ouvrent droit à remboursement. Sur la prestation "
-        "compensatoire, la Cour apprécie la disparité créée par la rupture au regard de la durée du mariage, de "
-        "l'âge et des ressources respectives des époux.\n\n"
+        "personnels, ou tracées par relevés bancaires corroborés, ouvrent droit à remboursement ; le profit "
+        "subsistant est apprécié au jour du partage. Sur la prestation compensatoire, la Cour apprécie la "
+        "disparité créée par la rupture au regard de la durée du mariage, de l'âge et des ressources respectives "
+        "des époux, fixée en capital ou convertie en rente viagère ou temporaire.\n\n"
         "PAR CES MOTIFS : Statuant publiquement, contradictoirement et en premier ressort avec voix prépondérante, "
         "la Cour prononce l'état liquidatif annexé au présent arrêt, alloue les sommes visées ci-dessus et "
         "condamne aux dépens selon répartition en tête."
@@ -226,53 +277,66 @@ def gen_decision(i: int, jur: str):
             "juridiction": jur, "chambre": chambre,
             "date_decision": d.isoformat(), "numero_pourvoi_rg": f"{d.year}/{num_rg}",
         },
-        "contexte_familial": {"regime_matrimonial": regime, "duree_mariage_annees": duree, "nombre_enfants": enfants},
+        "contexte_familial": {
+            "type_procedure": type_procedure, "regime_matrimonial": regime,
+            "duree_mariage_annees": duree, "nombre_enfants": enfants, "age_epoux_moyen": age_moyen,
+        },
         "biens_litigieux": {
             "bien_immobilier_principal": immo, "valeur_bien_principal": valeur_bien,
             "entreprises_societes": entreprises, "comptes_epargne": epargne,
         },
         "indemnite_occupation": {
             "demandee": occ_demandee, "accordee": bool(occ_accordee),
-            "montant_mensuel_base_valeur_locative": occ_mens_base,
-            "pourcentage_abattement_accorde": occ_abat,
+            "valeur_locative_mensuelle_retenue": occ_mens_base,
+            "taux_abattement_precarite_pct": occ_abat,
             "montant_mensuel_final": occ_mens_final,
             "duree_mois_retenue": occ_mois,
             "montant_total_accorde": occ_total,
-            "motifs_rejet_ou_reduction": (
-                f"Abattement de {occ_abat:.0f} % tenant à l'usage partiel du bien et à l'entretien assumé"
-                if occ_accordee and occ_abat else
-                ("Indemnité refusée : occupation exclusive non établie" if occ_demandee else None)
-            ),
+            "motif_refus_ou_modulation": occ_motif,
         },
-        "recompenses_et_creances": recompenses_json,
+        "reclamations_financieres": recompenses_json,
         "prestation_compensatoire": {
             "demandee": pc_demandee, "accordee": bool(pc_accordee), "forme": pc_forme,
-            "montant_capital_accorde": pc_capital,
-            "montant_rente_mensuelle": pc_rente, "duree_rente_mois": pc_rente_mois,
+            "montant_demande_epoux_A": pc_demande, "montant_propose_epoux_B": pc_propose,
+            "montant_accorde": pc_capital, "montant_rente_mensuelle": pc_rente,
+            "duree_rente_mois": pc_rente_mois, "ecart_revenus_mensuel": pc_ecart,
+            "criteres_determinants": pc_criteres,
         },
-        "frais_et_depens": {"article_700_montant": a700, "partage_depens": depens},
+        "cout_issue": {
+            "article_700_accorde": a700, "partie_condamnee_depens": depens,
+            "delai_procedure_estime_mois": delai_mois,
+        },
         "analyse_strategique": {
             "points_forts_gagnants": random.sample(POINTS_FORTS, 2),
             "pieges_et_erreurs_a_eviter": random.sample(PIEGES, 2),
             "resume_decision_3_lignes": resume,
+            "resume_pedagogique_3_lignes": resume_peda,
+            "conseil_pratique_extrait": random.choice(CONSEILS),
         },
     }
 
     dec = Decision(
         id=f"demo-{i:05d}", source="SYNTHETIQUE_DEMO",
         numero_rg=f"{d.year}/{num_rg}", juridiction=jur, chambre=chambre,
-        date_decision=d.isoformat(),
+        date_decision=d.isoformat(), type_procedure=type_procedure,
         regime_matrimonial=regime, duree_mariage_annees=duree, nombre_enfants=enfants,
+        age_epoux_moyen=age_moyen,
         bien_immobilier_principal=immo, valeur_bien_principal=valeur_bien,
         entreprises_societes=entreprises, comptes_epargne=epargne,
         occupation_demandee=occ_demandee, occupation_accordee=occ_accordee,
         occupation_montant_mensuel_base=occ_mens_base, occupation_abattement_pct=occ_abat,
         occupation_montant_mensuel_final=occ_mens_final, occupation_duree_mois=occ_mois,
-        occupation_montant_total=occ_total,
+        occupation_montant_total=occ_total, occupation_motif_modulation=occ_motif,
         pc_demandee=pc_demandee, pc_accordee=pc_accordee, pc_forme=pc_forme,
-        pc_montant_capital=pc_capital, pc_rente_mensuelle=pc_rente, pc_duree_rente_mois=pc_rente_mois,
+        pc_montant_capital=pc_capital, pc_montant_demande=pc_demande,
+        pc_montant_propose=pc_propose, pc_ecart_revenus_mensuel=pc_ecart,
+        pc_criteres_json=json.dumps(pc_criteres, ensure_ascii=False),
+        pc_rente_mensuelle=pc_rente, pc_duree_rente_mois=pc_rente_mois,
         article_700_montant=a700, partage_depens=depens,
-        resume_3_lignes=resume, raw_text=raw_text,
+        delai_procedure_mois=delai_mois,
+        resume_3_lignes=resume, resume_pedagogique=resume_peda,
+        conseil_pratique=extracted["analyse_strategique"]["conseil_pratique_extrait"],
+        raw_text=raw_text,
         extracted_json=json.dumps(extracted, ensure_ascii=False),
         text_md5=hashlib.md5(raw_text.encode("utf-8")).hexdigest(),
     )
@@ -282,6 +346,7 @@ def gen_decision(i: int, jur: str):
 
 
 def main():
+    ensure_schema()  # ajoute les colonnes v2 sans perdre les données existantes
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     db.query(Recompense).delete()
@@ -296,8 +361,8 @@ def main():
             db.add(dec)
             db.add_all(recs)
     db.commit()
-    print(f"Seed terminé : {db.query(Decision).count()} décisions, "
-          f"{db.query(Recompense).count()} récompenses (source=SYNTHETIQUE_DEMO).")
+    print(f"Seed v2 terminé : {db.query(Decision).count()} décisions, "
+          f"{db.query(Recompense).count()} réclamations financières (source=SYNTHETIQUE_DEMO).")
 
 
 if __name__ == "__main__":

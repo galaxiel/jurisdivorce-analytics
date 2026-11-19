@@ -1,24 +1,38 @@
-"""Endpoints statistiques du Dashboard Analytics (Module 1 du cahier des charges)."""
+"""Endpoints statistiques du Cockpit (Module 1 v2) — tous sensibles aux filtres croisés."""
+import random
 import statistics
 from collections import Counter, defaultdict
 from typing import List
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Decision, Recompense
-from ..schemas import CourComparatif, KpiOverview, MotifRejet, PCDistribution, PreuveSucces
+from ..schemas import (
+    AbattementBucket,
+    CourComparatif,
+    DecisionFiltersQuery,
+    Facets,
+    KpiOverview,
+    MotifRejet,
+    NatureSucces,
+    PCCorrelationPoint,
+    PCDistribution,
+    PreuveSucces,
+)
+from ..services.query import load_decisions, load_recompenses
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 PC_BUCKETS = [
-    (0, 5, "0-5 ans"),
-    (5, 10, "5-10 ans"),
-    (10, 15, "10-15 ans"),
-    (15, 20, "15-20 ans"),
-    (20, 30, "20-30 ans"),
-    (30, 200, "30 ans et +"),
+    (0, 5, "0-5 ans"), (5, 10, "5-10 ans"), (10, 15, "10-15 ans"),
+    (15, 20, "15-20 ans"), (20, 30, "20-30 ans"), (30, 200, "30 ans et +"),
+]
+ABATTEMENT_BUCKETS = [
+    (0, 10, "0-10 %"), (10, 15, "10-15 %"), (15, 20, "15-20 %"),
+    (20, 25, "20-25 %"), (25, 30, "25-30 %"), (30, 101, "30 % et +"),
 ]
 
 
@@ -31,31 +45,30 @@ def _median(values) -> float | None:
 
 
 @router.get("/overview", response_model=KpiOverview)
-def overview(db: Session = Depends(get_db)):
-    decisions = db.query(Decision).all()  # dataset léger : agrégation Python ; passer en SQL/JSONB à l'échelle
-    dates = sorted(d.date_decision for d in decisions if d.date_decision)
+def overview(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    decisions = load_decisions(db, filters)
+    recs = load_recompenses(db, decisions)
 
+    dates = sorted(d.date_decision for d in decisions if d.date_decision)
     occ_demandees = [d for d in decisions if d.occupation_demandee]
     occ_accordees = [d for d in occ_demandees if d.occupation_accordee]
     abattements = [d.occupation_abattement_pct for d in occ_accordees if d.occupation_abattement_pct is not None]
 
     travaux_accordes = [
-        r.montant_accorde
-        for r in db.query(Recompense)
-        .filter(Recompense.categorie == "TRAVAUX_BIEN_PROPRE", Recompense.montant_accorde.isnot(None))
-        .all()
+        r.montant_accorde for r in recs
+        if r.categorie == "TRAVAUX_BIEN_PROPRE" and r.montant_accorde is not None
     ]
-
-    aucune = [
-        r for r in db.query(Recompense)
-        .filter(Recompense.preuve_type == "AUCUNE", Recompense.statut.isnot(None))
-        .all()
-    ]
+    aucune = [r for r in recs if r.preuve_type == "AUCUNE" and r.statut]
     echec_sans_factures = round(100 * sum(r.statut == "REJETE" for r in aucune) / len(aucune), 1) if aucune else None
 
     pc_demandees = [d for d in decisions if d.pc_demandee]
     pc_accordees = [d for d in pc_demandees if d.pc_accordee]
     capitals = [d.pc_montant_capital for d in pc_accordees if d.pc_montant_capital is not None]
+
+    statutaires = [r for r in recs if r.statut]
+    demandes = [r.montant_reclame for r in statutaires if r.montant_reclame is not None]
+    accordes = [r.montant_accorde for r in statutaires if r.montant_accorde is not None]
+    a700 = [d.article_700_montant for d in decisions if d.article_700_montant is not None]
 
     return KpiOverview(
         total_decisions=len(decisions),
@@ -67,68 +80,121 @@ def overview(db: Session = Depends(get_db)):
         taux_echec_sans_factures_pct=echec_sans_factures,
         pc_taux_accorde_pct=round(100 * len(pc_accordees) / len(pc_demandees), 1) if pc_demandees else None,
         pc_capital_moyen=_mean(capitals),
+        pc_capital_median=_median(capitals),
+        taux_succes_recompenses_pct=round(100 * sum(r.statut != "REJETE" for r in statutaires) / len(statutaires), 1) if statutaires else None,
+        article_700_moyen=_mean(a700),
+        total_demande=round(sum(demandes)) if demandes else None,
+        total_accorde=round(sum(accordes)) if accordes else None,
     )
 
 
 @router.get("/comparatif-cours", response_model=List[CourComparatif])
-def comparatif_cours(db: Session = Depends(get_db)):
+def comparatif_cours(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
     groups: dict[str, list] = defaultdict(list)
-    for d in db.query(Decision).all():
+    for d in load_decisions(db, filters):
         if d.juridiction:
             groups[d.juridiction].append(d)
     items = []
-    for jur, g in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:10]:
+    for jur, g in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:12]:
         monthly = [d.occupation_montant_mensuel_final for d in g if d.occupation_accordee and d.occupation_montant_mensuel_final is not None]
         abat = [d.occupation_abattement_pct for d in g if d.occupation_accordee and d.occupation_abattement_pct is not None]
+        occ_demandees = [d for d in g if d.occupation_demandee]
+        occ_accordees = [d for d in occ_demandees if d.occupation_accordee]
         items.append(
             CourComparatif(
                 juridiction=jur,
                 nb_decisions=len(g),
                 indemnite_moyenne_mensuelle=_mean(monthly),
+                indemnite_mediane_mensuelle=_median(monthly),
                 abattement_moyen_pct=_mean(abat),
+                taux_acceptation_pct=round(100 * len(occ_accordees) / len(occ_demandees), 1) if occ_demandees else None,
             )
         )
     return items
 
 
 @router.get("/distribution-pc", response_model=List[PCDistribution])
-def distribution_pc(db: Session = Depends(get_db)):
+def distribution_pc(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
     decisions = [
-        d for d in db.query(Decision).all()
+        d for d in load_decisions(db, filters)
         if d.pc_accordee and d.pc_montant_capital is not None and d.duree_mariage_annees is not None
     ]
     out = []
     for lo, hi, label in PC_BUCKETS:
         capitals = [d.pc_montant_capital for d in decisions if lo <= d.duree_mariage_annees < hi]
         out.append(
-            PCDistribution(
-                bucket=label,
-                nb_decisions=len(capitals),
-                capital_moyen=_mean(capitals),
-                capital_median=_median(capitals),
+            PCDistribution(bucket=label, nb_decisions=len(capitals),
+                           capital_moyen=_mean(capitals), capital_median=_median(capitals))
+        )
+    return out
+
+
+@router.get("/abattement-distribution", response_model=List[AbattementBucket])
+def abattement_distribution(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    decisions = [
+        d for d in load_decisions(db, filters)
+        if d.occupation_accordee and d.occupation_abattement_pct is not None
+    ]
+    out = []
+    for lo, hi, label in ABATTEMENT_BUCKETS:
+        group = [d for d in decisions if lo <= d.occupation_abattement_pct < hi]
+        monthly = [d.occupation_montant_mensuel_final for d in group if d.occupation_montant_mensuel_final is not None]
+        out.append(AbattementBucket(bucket=label, nb_decisions=len(group), moyenne_indemnite_mensuelle=_mean(monthly)))
+    return out
+
+
+@router.get("/succes-par-nature", response_model=List[NatureSucces])
+def succes_par_nature(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    recs = load_recompenses(db, load_decisions(db, filters))
+    buckets: dict[str, list] = defaultdict(list)
+    for r in recs:
+        if r.statut and r.categorie:
+            buckets[r.categorie].append(r)
+    out = []
+    for nature, group in sorted(buckets.items(), key=lambda kv: -len(kv[1])):
+        demandes = [r.montant_reclame for r in group if r.montant_reclame is not None]
+        accordes = [r.montant_accorde for r in group if r.montant_accorde is not None]
+        out.append(
+            NatureSucces(
+                nature=nature,
+                nb_reclamations=len(group),
+                taux_succes_pct=round(100 * sum(r.statut != "REJETE" for r in group) / len(group), 1),
+                montant_moyen_demande=_mean(demandes),
+                montant_moyen_accorde=_mean(accordes),
             )
         )
     return out
 
 
+@router.get("/pc-correlation", response_model=List[PCCorrelationPoint])
+def pc_correlation(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    points = [
+        PCCorrelationPoint(
+            duree_mariage_annees=d.duree_mariage_annees,
+            ecart_revenus_mensuel=d.pc_ecart_revenus_mensuel,
+            capital_accorde=d.pc_montant_capital,
+            juridiction=d.juridiction,
+        )
+        for d in load_decisions(db, filters)
+        if d.pc_accordee and d.pc_montant_capital is not None and d.duree_mariage_annees is not None
+    ]
+    if len(points) > 600:
+        points = random.sample(points, 600)
+    return points
+
+
 @router.get("/top-motifs-rejet", response_model=List[MotifRejet])
-def top_motifs_rejet(db: Session = Depends(get_db)):
-    motifs = (
-        db.query(Recompense.motif_echec)
-        .filter(Recompense.statut == "REJETE", Recompense.motif_echec.isnot(None))
-        .all()
-    )
-    counts = Counter(m.strip(" .") for (m,) in motifs if m.strip())
+def top_motifs_rejet(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    motifs = [r.motif_echec for r in load_recompenses(db, load_decisions(db, filters))
+              if r.statut == "REJETE" and r.motif_echec]
+    counts = Counter(m.strip(" .") for m in motifs if m.strip())
     return [MotifRejet(motif=m, nb_cas=n) for m, n in counts.most_common(5)]
 
 
 @router.get("/recompenses-par-preuve", response_model=List[PreuveSucces])
-def recompenses_par_preuve(db: Session = Depends(get_db)):
-    recs = (
-        db.query(Recompense)
-        .filter(Recompense.statut.isnot(None), Recompense.preuve_type.isnot(None))
-        .all()
-    )
+def recompenses_par_preuve(filters: DecisionFiltersQuery = Depends(), db: Session = Depends(get_db)):
+    recs = [r for r in load_recompenses(db, load_decisions(db, filters))
+            if r.statut and r.preuve_type]
     buckets: dict[str, list] = defaultdict(list)
     for r in recs:
         buckets[r.preuve_type].append(r)
@@ -144,3 +210,18 @@ def recompenses_par_preuve(db: Session = Depends(get_db)):
             )
         )
     return out
+
+
+@router.get("/facets", response_model=Facets)
+def facets(db: Session = Depends(get_db)):
+    """Valeurs distinctes pour alimenter la barre de filtres universelle."""
+    decisions = db.query(Decision).all()
+    annees = sorted({d.date_decision[:4] for d in decisions if d.date_decision and len(d.date_decision) >= 4}, reverse=True)
+    natures = [row[0] for row in db.query(Recompense.categorie).filter(Recompense.categorie.isnot(None)).distinct().all()]
+    return Facets(
+        juridictions=sorted({d.juridiction for d in decisions if d.juridiction}),
+        annees=[int(a) for a in annees],
+        regimes=sorted({d.regime_matrimonial for d in decisions if d.regime_matrimonial}),
+        types_procedure=sorted({d.type_procedure for d in decisions if d.type_procedure}),
+        natures=sorted(natures),
+    )

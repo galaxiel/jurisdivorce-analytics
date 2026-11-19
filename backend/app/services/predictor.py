@@ -4,8 +4,9 @@ Aucun LLM à l'exécution : les fourchettes sont des percentiles calculés sur l
 jurisprudence en base (rapide, déterministe, 0 token). La logique est volontairement
 isolée de l'API pour être testable et remplaçable.
 """
+import json
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -162,6 +163,41 @@ def compute_report(db: Session, req) -> Dict:
         }
         notes.append("Prestation compensatoire : estimation indicative (art. 270-271 du Code civil ; la disparité, l'âge et les besoins comptent davantage).")
 
+    # ------------------------------------------------ 3bis) Checklist de preuves & alertes pièges
+    pool = occ_comp if occ_comp else decisions
+    pool_rec = [r for dd in pool for r in recs_by_decision.get(dd.id, []) if r.statut]
+    gagnantes = [r for r in pool_rec if r.statut != "REJETE"]
+    perdantes = [r for r in pool_rec if r.statut == "REJETE"]
+    checklist: List[Dict] = []
+    alertes: List[Dict] = []
+    if gagnantes:
+        preuve_counter: Counter = Counter()
+        for r in gagnantes:
+            try:
+                preuves = json.loads(r.preuves_json or "[]")
+            except json.JSONDecodeError:
+                preuves = []
+            if not preuves and r.preuve_clef_retenue:
+                preuves = [r.preuve_clef_retenue[:60]]
+            preuve_counter.update(preuves)
+        total_p = sum(preuve_counter.values()) or 1
+        checklist = [
+            {"preuve": p, "frequence_pct": round(100 * n / total_p)}
+            for p, n in preuve_counter.most_common(5)
+        ]
+    if perdantes:
+        cause_counter: Counter = Counter(r.motif_echec.strip(" .") for r in perdantes if r.motif_echec)
+        total_c = len(perdantes)
+        alertes = [
+            {"piege": c, "frequence_pct": round(100 * n / total_c)}
+            for c, n in cause_counter.most_common(4)
+        ]
+    if req.heritage_injecte:
+        notes.append(
+            f"Héritage de {req.heritage_injecte:.0f} € injecté dans le bien : sans clause de remploi "
+            "notariée ni traçabilité bancaire, la règle du nominalisme prive la récompense d'effet."
+        )
+
     # ------------------------------------------------ 4) Décisions « jumelles »
     def score(d: Decision) -> float:
         s = 0.0
@@ -205,5 +241,7 @@ def compute_report(db: Session, req) -> Dict:
         "chances_travaux": chances_travaux,
         "prestation_compensatoire": prestation_compensatoire,
         "jumelles": jumelles_out,
+        "checklist_preuves": checklist,
+        "alertes_pieges": alertes,
         "notes": notes,
     }

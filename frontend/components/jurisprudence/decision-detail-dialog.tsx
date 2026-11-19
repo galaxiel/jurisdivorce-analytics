@@ -1,22 +1,26 @@
 "use client";
 
-import { AlertTriangle, BadgeCheck, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, BadgeCheck, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDecision } from "@/lib/api";
-import { PROOF_LABELS, REGIME_LABELS, STATUT_LABELS } from "@/lib/types";
+import { PROOF_LABELS, REGIME_LABELS, REGLE_LABELS, STATUT_LABELS } from "@/lib/types";
 import { formatEur, formatDate } from "@/lib/utils";
 
 const CATEGORIE_LABELS: Record<string, string> = {
-  TRAVAUX_BIEN_PROPRE: "Travaux sur bien propre",
-  REMBOURSEMENT_EMPRUNT: "Remboursement d'emprunt",
-  APPORT_FONDS_PROPRES: "Apport en fonds propres",
+  TRAVAUX_BIEN_PROPRE: "Travaux amélioration",
+  FINANCEMENT_ACQUISITION: "Financement bien propre",
+  REMBOURSEMENT_EMPRUNT: "Remboursement emprunt immobilier",
+  APPORT_FONDS_PROPRES: "Apport fonds propres / héritage",
+  RECEL_COMMUNAUTE: "Recel de communauté",
+  COMPTE_JOINT_VIDE: "Compte joint vidé",
+  TAXES_ASSURANCE: "Taxes foncières / assurance",
   AUTRE: "Autre",
 };
 
-/* Fiche décisionnelle détaillée : vue côte-à-côte Résumé IA vs Extrait brut (cahier des charges §Module 3). */
+/* Fiche décisionnelle détaillée : analyse IA (résumé + volets financiers) vs texte intégral. */
 export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { data, loading, error } = useDecision(id);
 
@@ -29,6 +33,7 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
           ? `${data.juridiction} — ${formatDate(data.date_decision)} (${data.numero_rg ?? "RG n/a"})`
           : "Chargement de la décision…"
       }
+      className="max-w-5xl"
     >
       {loading && (
         <div className="space-y-3">
@@ -45,10 +50,14 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
               {data.source === "SYNTHETIQUE_DEMO" ? "Données de démonstration" : "Judilibre — officiel"}
             </Badge>
             <Badge variant="secondary">{REGIME_LABELS[data.regime_matrimonial ?? ""] ?? "Régime inconnu"}</Badge>
+            {data.type_procedure && <Badge variant="outline">{data.type_procedure}</Badge>}
             <Badge variant="outline">{data.duree_mariage_annees ?? "—"} ans de mariage</Badge>
             <Badge variant="outline">{data.nombre_enfants ?? 0} enfant(s)</Badge>
-            {data.valeur_bien_principal && (
-              <Badge variant="outline">Bien estimé {formatEur(data.valeur_bien_principal)}</Badge>
+            {data.valeur_bien_principal && <Badge variant="outline">Bien estimé {formatEur(data.valeur_bien_principal)}</Badge>}
+            {data.delai_procedure_mois && (
+              <Badge variant="outline">
+                <Clock className="mr-1 h-3 w-3" /> {data.delai_procedure_mois} mois de procédure
+              </Badge>
             )}
           </div>
 
@@ -59,6 +68,21 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 <p>{data.resume_3_lignes}</p>
+
+                {data.pc_montant_demande != null && (
+                  <div className="rounded-md border bg-secondary/50 p-2.5 text-xs">
+                    <span className="font-semibold">Prestation compensatoire :</span>{" "}
+                    demandée {formatEur(data.pc_montant_demande)} · proposée par l&apos;autre partie{" "}
+                    {formatEur(data.pc_montant_propose)} · accordée{" "}
+                    <span className={data.pc_accordee ? "font-semibold text-success" : "font-semibold text-destructive"}>
+                      {formatEur(data.pc_montant_capital)}
+                    </span>
+                    {data.pc_ecart_revenus_mensuel != null && (
+                      <> · écart de revenus {formatEur(data.pc_ecart_revenus_mensuel)}/mois</>
+                    )}
+                    {data.pc_criteres.length > 0 && <> · critères : {data.pc_criteres.join(", ")}</>}
+                  </div>
+                )}
 
                 {data.points_forts_gagnants.length > 0 && (
                   <div>
@@ -88,7 +112,7 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
 
                 {data.recompenses.length > 0 && (
                   <div>
-                    <h4 className="mb-1.5 font-semibold">Récompenses &amp; créances</h4>
+                    <h4 className="mb-1.5 font-semibold">Réclamations financières</h4>
                     <ul className="space-y-2">
                       {data.recompenses.map((r) => (
                         <li key={r.id} className="rounded-md border p-2.5 text-xs">
@@ -106,14 +130,17 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
                             <span className="ml-auto">
                               {r.statut !== "REJETE" ? (
                                 <>
-                                  {formatEur(r.montant_accorde)} <span className="text-muted-foreground">/ {formatEur(r.montant_reclame)} demandés</span>
+                                  {formatEur(r.montant_accorde)}{" "}
+                                  <span className="text-muted-foreground">/ {formatEur(r.montant_reclame)} demandés</span>
                                 </>
                               ) : (
                                 <span className="text-muted-foreground">{formatEur(r.montant_reclame)} demandés</span>
                               )}
                             </span>
                           </div>
-                          <div className="mt-1 text-muted-foreground">
+                          <div className="mt-1 space-y-0.5 text-muted-foreground">
+                            {r.regle_calcul && <p>Règle de calcul : {REGLE_LABELS[r.regle_calcul] ?? r.regle_calcul}</p>}
+                            {r.preuves.length > 0 && <p>Preuves déterminantes : {r.preuves.join(", ")}</p>}
                             {r.preuve_clef_retenue && <p>Preuve retenue : {r.preuve_clef_retenue}</p>}
                             {r.motif_echec && <p>Échec : {r.motif_echec}</p>}
                             {r.preuve_type && <p className="italic">Type de preuve : {PROOF_LABELS[r.preuve_type] ?? r.preuve_type}</p>}
@@ -121,6 +148,13 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+
+                {data.conseil_pratique && (
+                  <div className="rounded-md border border-accent/30 bg-accent/10 p-2.5 text-xs text-foreground">
+                    <span className="font-semibold">Ce qu&apos;il faut retenir pour un dossier similaire : </span>
+                    {data.conseil_pratique}
                   </div>
                 )}
               </CardContent>
@@ -131,7 +165,7 @@ export function DecisionDetailDialog({ id, onClose }: { id: string | null; onClo
                 <CardTitle className="text-sm">Extrait brut officiel de l&apos;arrêt</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="max-h-[420px] overflow-y-auto whitespace-pre-wrap rounded-md bg-secondary p-3 font-mono text-xs leading-relaxed text-muted-foreground">
+                <pre className="max-h-[520px] overflow-y-auto whitespace-pre-wrap rounded-md bg-secondary p-3 font-mono text-xs leading-relaxed text-muted-foreground">
                   {data.raw_excerpt || "Texte intégral indisponible."}
                 </pre>
               </CardContent>

@@ -1,10 +1,15 @@
 import type { Config } from "tailwindcss";
+import { themeConfig } from "./theme.config";
 
 const config: Config = {
   darkMode: ["class"],
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [...themeConfig.fontFamily.sans.split(", "), "sans-serif"],
+        mono: [...themeConfig.fontFamily.mono.split(", "), "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -39,6 +44,7 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        surface: "hsl(var(--surface))",
         success: {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",
@@ -48,6 +54,10 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        card: themeConfig.shadows.card,
+        "card-hover": themeConfig.shadows.cardHover,
       },
     },
   },
