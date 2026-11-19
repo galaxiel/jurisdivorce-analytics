@@ -4,6 +4,11 @@ Plateforme d'analyse statistique et décisionnelle de la jurisprudence français
 famille (divorce, liquidation de régime matrimonial & partage) — **v2 : ingestion massive,
 schéma enrichi, cockpit à filtres croisés, moniteur du pipeline**.
 
+> **🤖 Reprise par un agent IA** : lire d'abord [`AGENTS.md`](AGENTS.md) (règles + commandes
+> de vérification), puis [`docs/STATE.md`](docs/STATE.md) (état vérifié + roadmap) et
+> [`docs/DECISIONS.md`](docs/DECISIONS.md) (journal des choix techniques). Les prompts
+> fondateurs sont archivés dans [`docs/`](docs/).
+
 ```
 DILA Open Data (CAPP · CASS · TJ, toutes les archives historiques)
         │  pipeline/dila.py       — aspirateur récursif + manifest processed_archives
