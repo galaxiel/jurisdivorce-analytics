@@ -29,6 +29,15 @@ Frontend Next.js          — 7 vues : Accueil · Cockpit · Mon Cas · Calculat
 
 ## Démarrage rapide
 
+### Option A — double-clic (Windows) 👍
+
+| Fichier | Effet |
+|---|---|
+| **`start.cmd`** | Double-cliquez : installe les dépendances si nécessaire, génère les données de démo si la base est vide, ouvre l'API + le site dans deux fenêtres, attend qu'ils soient prêts puis ouvre le navigateur sur **http://localhost:3100** |
+| **`stop.cmd`** | Arrête l'API (8000) et le site (3100) d'un coup |
+
+### Option B — ligne de commande
+
 ```bash
 # 1. Backend
 cd backend && pip install -r requirements.txt

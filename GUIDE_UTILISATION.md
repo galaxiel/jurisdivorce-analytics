@@ -27,6 +27,13 @@
 
 ## 1. Démarrer l'application
 
+**Option simple (Windows) — double-cliquez sur `start.cmd`** à la racine du projet : il
+installe les dépendances si nécessaire, génère les données de démonstration si la base est
+vide, ouvre l'API et le site dans deux fenêtres, puis ouvre votre navigateur sur
+**http://localhost:3100**. Pour tout arrêter : `stop.cmd` (ou fermez les deux fenêtres).
+
+**Option ligne de commande :**
+
 ```bash
 # Terminal 1 — l'API (backend)
 cd backend
@@ -40,8 +47,8 @@ npm install
 npm run dev                          # http://localhost:3000
 ```
 
-Ouvrez **http://localhost:3000** dans votre navigateur. La documentation technique de l'API
-est disponible sur **http://127.0.0.1:8000/docs**.
+Ouvrez **http://localhost:3100** (ou 3000) dans votre navigateur. La documentation technique
+de l'API est disponible sur **http://127.0.0.1:8000/docs**.
 
 **Première visite ?** Si la base contient moins de 50 décisions, un bandeau ambre apparaît en
 haut de l'écran : cliquez sur **« Charger 50 arrêts de démonstration »** pour que tous les
