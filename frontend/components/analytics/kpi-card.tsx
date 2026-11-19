@@ -23,7 +23,7 @@ export function KpiCard({
   }[tone];
 
   return (
-    <Card className="shadow-sm">
+    <Card className="shadow-card">
       <CardContent className="p-4">
         <div className={cn("text-2xl font-bold tabular-nums", toneClass)}>{value}</div>
         <p className="mt-1 text-xs font-medium leading-snug text-muted-foreground">{label}</p>

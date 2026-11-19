@@ -3,7 +3,6 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DemoBanner } from "@/components/demo-banner";
 import { Header } from "@/components/layout/header";
-import { Footer } from "@/components/layout/footer";
 import { LegalDisclaimerFooter } from "@/components/legal-disclaimer-footer";
 import { EntitlementsProvider } from "@/lib/entitlements";
 
@@ -24,7 +23,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Header />
             <main className="flex-1">{children}</main>
             <LegalDisclaimerFooter />
-            <Footer />
           </div>
         </ThemeProvider>
         </EntitlementsProvider>

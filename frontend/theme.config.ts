@@ -16,7 +16,7 @@ export const themeConfig = {
     surface: "0 0% 100%",
   } as const,
 
-  radius: "0.75rem",
+  radius: "0.875rem",
 
   fontFamily: {
     sans: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
@@ -24,13 +24,15 @@ export const themeConfig = {
   },
 
   gradients: {
-    hero: "radial-gradient(1200px 500px at 50% -10%, hsl(var(--primary) / 0.14), transparent)",
+    hero: "radial-gradient(1100px 480px at 50% -12%, hsl(var(--primary) / 0.16), transparent 70%), radial-gradient(700px 320px at 85% 0%, hsl(var(--accent) / 0.10), transparent 70%)",
+    banner: "linear-gradient(120deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12))",
     card: "linear-gradient(180deg, hsl(var(--surface)), hsl(var(--surface)))",
   },
 
   shadows: {
-    card: "0 1px 2px 0 rgb(15 23 42 / 0.05), 0 1px 3px 0 rgb(15 23 42 / 0.04)",
-    cardHover: "0 4px 16px -2px rgb(15 23 42 / 0.12)",
+    card: "0 1px 2px 0 rgb(15 23 42 / 0.05), 0 2px 6px -1px rgb(15 23 42 / 0.05)",
+    cardHover: "0 10px 24px -8px rgb(15 23 42 / 0.18), 0 2px 6px -2px rgb(15 23 42 / 0.08)",
+    elevated: "0 16px 40px -12px rgb(15 23 42 / 0.25)",
   },
 } as const;
 

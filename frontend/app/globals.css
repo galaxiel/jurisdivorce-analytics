@@ -29,7 +29,10 @@
     --border: 214 30% 90%;
     --input: 214 30% 84%;
     --ring: 224 76% 48%;
-    --radius: 0.75rem;
+    --radius: 0.875rem;
+    --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.05), 0 2px 6px -1px rgb(15 23 42 / 0.05);
+    --shadow-card-hover: 0 10px 24px -8px rgb(15 23 42 / 0.18), 0 2px 6px -2px rgb(15 23 42 / 0.08);
+    --shadow-elevated: 0 16px 40px -12px rgb(15 23 42 / 0.25);
   }
 
   .dark {
@@ -57,12 +60,18 @@
     --border: 226 24% 17%;
     --input: 226 24% 22%;
     --ring: 224 82% 58%;
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 2px 8px -1px rgb(0 0 0 / 0.35);
+    --shadow-card-hover: 0 12px 28px -8px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+    --shadow-elevated: 0 18px 48px -12px rgb(0 0 0 / 0.7);
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground antialiased;
@@ -74,6 +83,29 @@
   h1, h2, h3 {
     letter-spacing: -0.02em;
   }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.7);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Scrollbar discrète */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.55);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 @layer utilities {
@@ -81,11 +113,36 @@
     font-variant-numeric: tabular-nums;
   }
   .card-hover {
-    transition: box-shadow 0.18s ease, transform 0.18s ease;
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
   }
   .card-hover:hover {
-    box-shadow: 0 4px 16px -2px rgb(15 23 42 / 0.12);
-    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+  /* Fond de hero : halos primary/accent (cf. themeConfig.gradients.hero) */
+  .bg-hero {
+    background: radial-gradient(1100px 480px at 50% -12%, hsl(var(--primary) / 0.16), transparent 70%),
+      radial-gradient(700px 320px at 85% 0%, hsl(var(--accent) / 0.10), transparent 70%);
+  }
+  .dark .bg-hero {
+    background: radial-gradient(1100px 480px at 50% -12%, hsl(var(--primary) / 0.22), transparent 70%),
+      radial-gradient(700px 320px at 85% 0%, hsl(var(--accent) / 0.14), transparent 70%);
+  }
+  /* Grille subtile pour les sections */
+  .bg-grid {
+    background-image: linear-gradient(hsl(var(--border) / 0.6) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 75%);
+  }
+  /* Titre dégradé primary → accent */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(100deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+  /* Bandeau CTA (cf. themeConfig.gradients.banner) */
+  .bg-banner {
+    background: linear-gradient(120deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12));
   }
 }
 
