@@ -100,6 +100,23 @@ python -m pipeline.ingest status --db /tmp/test.db
   `backend/jurisprudence.db`, `.env*`. Tout est déjà dans `.gitignore` — vérifier avant `git add -A`.
 - Dépôt GitHub : `galaxiel/jurisdivorce-analytics` (privé), branche `main`, `gh` authentifié.
 
+## 🚨 Règle d'Or N°6 — Conservation intégrale (`raw_fiches`) 🚨
+
+> **Toute décision scannée doit être écrite dans `raw_fiches` (texte intégral `raw_text`,
+> fonds, archive, md5) AVANT même d'être évaluée par le pré-filtre.** On ne jette plus rien :
+> une fiche rejetée par le filtre reste ré-extractible hors-ligne, et **on ne re-télécharge
+> jamais** les archives DILA (elles peuvent être supprimées du disque après campagne).
+
+- ❌ Ne jamais supprimer de branche/logique qui écrit `raw_fiches`, ne jamais vider la table
+  (`DELETE`/`DROP` interdits), ne jamais rendre ce stockage optionnel.
+- ❌ Ne jamais faire dépendre une statistique d'un re-téléchargement : tout part de `raw_fiches`
+  ou de `decisions.raw_text` / `decisions.extracted_json`.
+- ✅ Le pré-filtre (`decision_filter`) ne sert qu'à **décider quelles fiches passent à
+  l'extraction LLM** (coût tokens) — jamais à décider ce qu'on conserve.
+- ✅ Test tripwire : `tests/test_pipeline_core.py::test_raw_fiches_conservation_non_negociable`
+  vérifie (niveau source) que `save_raw_fiche(` est appelé avant `decision_filter(` dans la
+  boucle d'ingestion — si un agent casse cet ordre, `pytest` échoue et la CI bloque le merge.
+
 ## Règles d'architecture (non négociables)
 
 1. **Thème** : toute couleur/typo/ombre se change UNIQUEMENT dans

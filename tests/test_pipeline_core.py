@@ -78,6 +78,22 @@ def test_save_raw_fiche_conserve_tout():
     assert decision_filter(rejet)[0] is False
     assert save_raw_fiche(conn, "id-2", "md5-2", rejet, "CAPP", "arch.tar.gz") is True
 
+def test_raw_fiches_conservation_non_negociable():
+    """Tripwire (Règle d'Or N°6) : la boucle d'ingestion doit sauvegarder la fiche brute
+    AVANT d'appliquer le pré-filtre, et la table raw_fiches doit exister dans les schémas."""
+    import io, os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = io.open(os.path.join(root, "pipeline", "ingest.py"), encoding="utf-8").read()
+    i_save = src.find("save_raw_fiche(")
+    i_filter = src.find("decision_filter(")
+    assert i_save != -1, "save_raw_fiche a disparu de pipeline/ingest.py (Règle d'Or N°6)"
+    assert i_filter != -1, "decision_filter a disparu de pipeline/ingest.py"
+    assert i_save < i_filter, "save_raw_fiche doit être appelé AVANT decision_filter (fiche sauvée même si rejetée)"
+    core = io.open(os.path.join(root, "pipeline", "core.py"), encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS raw_fiches" in core, "table raw_fiches manquante dans le schéma pipeline"
+    db = io.open(os.path.join(root, "backend", "app", "database.py"), encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS raw_fiches" in db, "table raw_fiches manquante dans le schéma backend"
+
 # ---------------------------------------------------------- normalisation
 def test_normalize_juridiction():
     assert normalize_juridiction("CA PARIS") == "Cour d'appel de Paris"
