@@ -39,6 +39,19 @@ GLM Flash Zhipu (API openai-compliant) pour l'extraction.
 (seed v2) + tables pipeline (`pipeline_state`, `pipeline_logs`, `processed_archives` avec
 l'archive CAPP réelle).
 
+**Conservation d'une fiche (réponse « garde-t-on tout ?»)** : chaque décision retenue stocke
+`raw_text` (texte intégral de l'arrêt) + `extracted_json` (sortie LLM **complète**, non aplatie) +
+les colonnes requêtables + `text_md5`. Donc ajouter une stat demain = calcul depuis
+`extracted_json`/colonnes (**0 token, pas de ré-extraction**) ; un champ absent du prompt actuel
+= ré-extraction depuis `raw_text` (hors-ligne, sans re-télécharger — **0 téléchargement**,
+seulement des tokens). Jamais besoin de reprendre les archives DILA.
+**Taille mesurée** : fiche démo ~4,7 Ko (raw 1,6 Ko + JSON 3,0 Ko) ; fiche réelle CASS ~4,1 Ko raw
++ ~3 Ko JSON ≈ ~10 Ko avec index/FTS. Dump **complet sans filtre** (CASS 145 421 + CAPP 25 999
+fichiers) ≈ **0,7–0,9 Go de texte brut → ~1,5–2 Go de DB SQLite** (disque : 139 Go libres, donc
+négligeable). La vraie contrainte du « dump tout » n'est pas le disque mais les **tokens LLM**
+(~16,5 k/décision × ~171 k décisions ≈ 2,8 T tokens ≈ ~9 500 jours de quota 300 M/j) — d'où le
+pré-filtre.
+
 ## ❌ Ce qui n'existe PAS encore (roadmap priorisée)
 
 1. **Campagne `--analyze` réelle avec ZHIPU_API_KEY** — tout est prêt (worker, DLQ, reprise,
