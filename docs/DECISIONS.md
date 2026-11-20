@@ -207,3 +207,22 @@ les autres énumérations (`statut`, `regle_calcul`, `demandeur`, `preuve_type` 
 étaient déjà cohérentes. Tests unitaires ajoutés (30 tests verts). **Pourquoi** : un champ
 énuméré doit avoir UN vocabulaire canonique, imposé à l'écriture — sinon les filtres et les
 facettes divergent silencieusement dès la première vraie ingestion.
+
+## 28. Filtre lexical : audit de rappel sur la vraie archive CASS (V7)
+**Contexte** : question « récupère-t-on toutes les décisions utiles ? » — audit chiffré sur
+`Freemium_cass_global_…tar.gz` (145 421 fichiers XML) : le filtre retenait 785 décisions sur
+62 707 scannées, et parmi les rejets figuraient des familles utiles (concubinage/PACS 291,
+pension alimentaire 499, art. 262-1 70, mesures provisoires 63, ONC 102, licitation 242,
+séquestre 211, communauté universelle/préciput 27+27, art. 266 47, logement familial 22…).
+**Décision** : élargissement des `SECONDARY_TERMS` (articles en double forme « article X » /
+« art. X », pension alimentaire, 266/1240/700, nom d'usage, logement familial, mesures
+provisoires, ONC, licitation, séquestre, 262-1, communauté universelle, participation aux
+acquêts, clause de partage/préciput, indivision, date des effets patrimoniaux…) et du
+contexte famille (`CONTEXT_TERMS` += concubin, PACS, union libre, conjoint) — le chemin
+« 2 termes secondaires » exige toujours un contexte famille, donc pas de bruit de procédure
+civile générale (art. 700 seul ne suffit pas). Résultat : **1 122 retenues (+43 %)** avec
+précision contrôlée (échantillon CASS inspecté). Les décisions rejetées restent non stockées
+(économie disque/tokens) ; les retenues conservent `raw_text` + `extracted_json` complets, donc
+réexploitables plus tard même si l'UI ne les affiche pas encore. **Pourquoi** : un pré-filtre
+trop étroit perd définitivement des décisions (le texte brut n'est pas gardé) — mieux vaut
+un peu plus de tokens que des angles morts.

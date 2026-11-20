@@ -19,16 +19,26 @@ from typing import Any, Dict, Optional, Tuple
 # FILTRE NORMALISÉ (sans accents, casse libre) — Étape 1.2 du cahier des charges
 # ---------------------------------------------------------------------------
 STRONG_TERMS = [
-    "etat liquidatif", "liquidation du regime", "liquidation et partage",
+    "etat liquidatif", "liquidation du regime", "liquidation et partage", "liquidation-partage",
     "indivision post-communautaire", "indemnite d'occupation", "prestation compensatoire",
     "proces-verbal de difficultes", "recel de communaute", "creance entre epoux",
     "recompense due par", "recompense due a",
 ]
 SECONDARY_TERMS = [
     "notaire liquidateur", "communaute reduite aux acquets", "separation de biens",
-    "soulte", "attribution preferentielle", "article 270", "article 1469", "article 815-9",
+    "soulte", "attribution preferentielle", "article 270", "art. 270", "article 1469", "art. 1469",
+    "article 815-9", "art. 815-9",
     "liquidateur", "etat des recompenses", "partage des acquets",
+    # élargis après audit CASS (rejets contenant encore des termes utiles) :
+    "communaute universelle", "participation aux acquets", "clause de partage", "preciput",
+    "pension alimentaire", "article 266", "art. 266", "article 1240", "art. 1240",
+    "nom d'usage", "article 700", "art. 700",
+    "logement familial", "usage du logement", "mesure provisoire", "non-conciliation",
+    "licitation", "sequestre", "262-1", "avantage matrimonial", "divorce pour faute",
+    "indivision", "date des effets patrimoniaux",
 ]
+# Contexte « famille » élargi : un arrêt de concubinage/PACS n'a ni « divorce » ni « époux »
+CONTEXT_TERMS = ["divorce", "epoux", "epouse", "concubin", "pacs", "union libre", "conjoint"]
 MIN_CHARS = 1200
 OCCULTATION_MARKERS = ["motifs de la decision occultes", "motifs occultes", "motifs occultés"]
 
@@ -54,7 +64,7 @@ def decision_filter(raw_text: str) -> Tuple[bool, str]:
     for term in STRONG_TERMS:
         if term in n:
             return True, f"fort:{term}"
-    if not ("divorce" in n or "epoux" in n or "epouse" in n):
+    if not any(c in n for c in CONTEXT_TERMS):
         return False, "hors champ"
     secondary = [t for t in SECONDARY_TERMS if t in n]
     if len(secondary) >= 2:

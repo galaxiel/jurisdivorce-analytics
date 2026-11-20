@@ -106,3 +106,11 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
   `normalize_nature` / `normalize_type_procedure` / `normalize_pc_forme` / `normalize_mode_garde`
   dans `pipeline/core.py` (appliqués dans `save_decision`) — un champ énuméré n'a plus qu'un
   vocabulaire canonique, inconnu → `AUTRE`/`null` au lieu de texte brut infiltrable. 30 tests verts.
+- **V7 — audit de rappel du pré-filtre (archive CASS réelle, 145 421 XML)** : 785 → **1 122 décisions
+  retenues (+43 %)** après élargissement des termes secondaires (art. 266/700/1240/270/1469/815-9 en
+  « article » et « art. », pension alimentaire, nom d'usage, logement familial, mesures provisoires,
+  ONC, licitation, séquestre, 262-1, communauté universelle, participation aux acquêts, clause de
+  partage/préciput, indivision…) et du contexte famille (concubin, PACS, union libre, conjoint).
+  Le chemin « 2 secondaires » exige toujours un contexte famille → pas de bruit de procédure civile.
+  31 tests verts. Note : 82 714 fichiers CASS < 1 200 chars ne sont jamais scannés (parse) — court
+  délibéré (décisions de pure procédure), à réévaluer si un dump TJ voit le jour.

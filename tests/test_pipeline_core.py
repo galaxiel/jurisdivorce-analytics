@@ -45,6 +45,23 @@ def test_pseudonymisation_nest_pas_un_rejet():
     texte = "Décision pseudonymisée avec [...] et *** sur les noms, liquidation du régime matrimonial. " * 60
     assert decision_filter(texte)[0] is True
 
+def test_filtre_concubinage_et_demandes_annexes():
+    # Contexte concubinage/PACS (pas de « divorce » ni « époux ») + 2 termes secondaires
+    t1 = ("Indivision entre concubins après rupture de l'union libre : soulte et licitation du bien. " * 30)
+    assert decision_filter(t1)[0] is True
+    # Pension alimentaire + art. 700 dans un contexte divorce
+    t2 = ("Le divorce est prononcé ; pension alimentaire pour les enfants et condamnation art. 700 CPC. " * 30)
+    assert decision_filter(t2)[0] is True
+    # art. 262-1 + communauté universelle (dans un contexte divorce)
+    t3 = ("Le divorce est prononcé. Date des effets patrimoniaux fixée au 262-1 ; communauté universelle avec préciput. " * 30)
+    assert decision_filter(t3)[0] is True
+    # Sans contexte famille, même avec des termes secondaires → rejet (anti-bruit)
+    t3b = ("Date des effets patrimoniaux fixée au 262-1 ; communauté universelle avec préciput. " * 30)
+    assert decision_filter(t3b)[0] is False
+    # Toujours hors champ sans contexte famille
+    t4 = ("Soulte et licitation ordonnées en matière de succession entre frères et sœurs. " * 30)
+    assert decision_filter(t4)[0] is False
+
 # ---------------------------------------------------------- normalisation
 def test_normalize_juridiction():
     assert normalize_juridiction("CA PARIS") == "Cour d'appel de Paris"
