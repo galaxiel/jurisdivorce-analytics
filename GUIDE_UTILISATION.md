@@ -18,7 +18,7 @@
 5. [Le Calculateur juridique — /calculateur](#5-le-calculateur-juridique--calculateur)
 6. [L'Explorateur de jurisprudence — /decisions](#6-lexplorateur-de-jurisprudence--decisions)
 7. [Le Radar des Pièges — /pieges](#7-le-radar-des-pièges--pieges)
-8. [Le Moniteur du Pipeline — /pipeline](#8-le-moniteur-du-pipeline--pipeline)
+8. [Le Moniteur du Pipeline — /pipeline (admin, protégé par token)](#8-le-moniteur-du-pipeline--pipeline-admin-protégé-par-token)
 9. [Les exports (CSV, JSON, Word, Markdown, PDF)](#9-les-exports)
 10. [Le mode sombre / clair](#10-le-mode-sombre--clair)
 11. [Questions fréquentes](#11-questions-fréquentes)
@@ -70,7 +70,8 @@ La page d'accueil présente :
   HTML) puis rafraîchis en live par l'API.
 - Une section **« Comment ça marche ? »** en 3 étapes (décrire sa situation → observer les
   fourchettes constatées → préparer son rendez-vous avec son avocat/notaire).
-- **6 cartes d'accès** : Cockpit, Simulateur, Calculateur, Jurisprudence, Pièges, Pipeline.
+- **5 cartes d'accès** : Cockpit, Simulateur, Calculateur, Jurisprudence, Pièges (le moniteur
+  `/pipeline` est une vue **admin** séparée, voir §8).
 - Un **bandeau CTA** final renvoyant au simulateur.
 - Un **point de santé** dans la barre de navigation (vert = base et disque OK ; infobulle avec
   le détail au survol) et un **pied de page unique** : clause légale (loi du 31/12/1971) +
@@ -241,9 +242,16 @@ dit quel justificatif apporter pour ne pas le rencontrer.*
 
 ---
 
-## 8. Le Moniteur du Pipeline — /pipeline
+## 8. Le Moniteur du Pipeline — /pipeline (admin, protégé par token)
 
 La vue réservée à **l'exploitation** (remplissage de la base avec de vraies décisions).
+
+> 🔒 **Accès restreint (Règle d'Or N°7)** : la page n'est plus dans la barre de navigation ni
+> sur l'accueil. On y accède par l'URL directe `/pipeline` + saisie du **token admin**
+> (`JURISDIVORCE_ADMIN_TOKEN`, stocké dans `backend/.env` — jamais committé). Côté serveur,
+> toutes les routes `/api/pipeline/*` renvoient **404** sans l'en-tête `X-Admin-Token` valide
+> (fail-closed). Procédure complète (régénération du token, redémarrage) :
+> [`docs/ADMIN_PIPELINE.md`](docs/ADMIN_PIPELINE.md).
 
 ### Lancer une campagne d'ingestion
 

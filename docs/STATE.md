@@ -1,6 +1,6 @@
 # ÉTAT DU PROJET — snapshot pour reprise par un agent
 
-*Dernière mise à jour : 2026-11-19 (missions V3→V7 : robustesse, métier, conformité, freemium, refonte UI + correctifs déploiement) · dépôt `galaxiel/jurisdivorce-analytics` (public, `main`)*
+*Dernière mise à jour : 2026-11-20 (missions V3→V8 : robustesse, métier, conformité, freemium, refonte UI + correctifs déploiement, **sécurité admin /pipeline (Règle d'Or N°7)**) · dépôt `galaxiel/jurisdivorce-analytics` (privé, `main`)*
 *Lire aussi : `AGENTS.md` (règles + commandes), `docs/DECISIONS.md` (pourquoi des choix) et [`GUIDE_UTILISATION.md`](../GUIDE_UTILISATION.md) (+ PDF) pour le manuel utilisateur.*
 
 ## Stack

@@ -9,7 +9,7 @@ pipeline, simulateur multi-situations, conformité juridique (Règle d'Or N°5) 
 suite de tests et CI, refonte UI et déploiement web same-origin (tunnel Cloudflare).
 
 ```
-DILA Open Data (CAPP · CASS · TJ — toutes les archives historiques, XML + JSON)
+DILA Open Data (CAPP · CASS — seules juridictions publiées, le fonds TJ renvoie 404 côté DILA)
         │  pipeline/dila.py    — aspirateur récursif, tri taille/date, manifest processed_archives
         ▼
 pipeline/core.py          — filtre normalisé (1 terme fort OU 2 secondaires), dédoublonnage MD5,
@@ -24,8 +24,9 @@ backend/jurisprudence.db  — SQLite/Postgres, colonnes aplanies v2+, index FTS5
 API FastAPI               — filtres croisés partagés (/decisions · /stats/* · /export),
                             calculateur 815-9/1469, pièges, tendances, pipeline monitor, /api/health
         ▼
-Frontend Next.js          — 7 vues : Accueil · Cockpit · Mon Cas · Calculateur · Jurisprudence ·
-                            Pièges · Pipeline (thème centralisé, mode sombre/clair)
+Frontend Next.js          — 6 vues publiques : Accueil · Cockpit · Mon Cas · Calculateur ·
+                            Jurisprudence · Pièges + 1 vue admin `/pipeline` (protégée par token,
+                            Règle d'Or N°7) ; thème centralisé, mode sombre/clair
 ```
 
 ## Démarrage rapide
@@ -60,8 +61,9 @@ pytest tests -q                         # 27 tests (pipeline + API)
 pip install -r pipeline/requirements.txt
 export ZHIPU_API_KEY="votre_clé_zhipu"          # quota 300 M tokens/jour sur GLM Flash
 
-python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --dry-run   # comptage, 0 token
-python -m pipeline.ingest run --download --fonds CAPP,CASS,TJ --analyze   # campagne complète
+python -m pipeline.ingest run --download --fonds CAPP,CASS --dry-run   # comptage, 0 token
+python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze   # campagne complète
+# (fonds TJ inexistant côté DILA : /OPENDATA/TJ/ → 404 ; seuls CAPP et CASS sont publiés)
 python -m pipeline.ingest status                                          # état
 python -m pipeline.ingest control pause|resume|stop                       # pilotage
 python -m pipeline.ingest retry-failed                                    # relancer la DLQ
@@ -71,7 +73,9 @@ Ce que fait la campagne : aspiration récursive des **archives historiques** DIL
 `processed_archives` → reprise), filtre sans faux négatifs (pseudonymisation acceptée, seuls
 les motifs explicitement occultés ou textes < 1 200 caractères sont écartés), worker haute
 cadence avec **réparation JSON** et **troncature par sections** (en-tête + motifs + dispositif),
-**DLQ** des échecs, heartbeat temps réel → moniteur `/pipeline`.
+**DLQ** des échecs, heartbeat temps réel → moniteur `/pipeline` (**admin** : page retirée de la
+navbar, toutes les routes `/api/pipeline/*` exigent `X-Admin-Token` = `JURISDIVORCE_ADMIN_TOKEN`, voir
+[`docs/ADMIN_PIPELINE.md`](docs/ADMIN_PIPELINE.md)).
 
 **Preuves réelles** (dry-run, 2026-11-19) : CAPP 292 Mo → 25 999 décisions parcourues,
 **2 001 conservées** ; CASS 264 Mo → 145 421 fichiers XML lus, **785 conservées**.
@@ -86,20 +90,22 @@ cadence avec **réparation JSON** et **troncature par sections** (en-tête + mot
 
 - **Concurrence** : démarrez `--concurrency 50` — le limiteur adaptatif divise par 2 à chaque
   429 (50 → 25 → 12…), retente en backoff exponentiel, remonte de +10 % toutes les 90 s sans erreur.
-- Réglages modifiables **à chaud** depuis `/pipeline` (table `app_config` relue à chaque décision)
-  ou `.env` (`ZHIPU_API_KEY`, `MAX_CONCURRENCY`, `MAX_CHARS`, `JURISDIVORCE_MODEL`).
+- Réglages modifiables **à chaud** depuis `/pipeline` (admin, token requis — table `app_config`
+  relue à chaque décision) ou `.env` (`ZHIPU_API_KEY`, `MAX_CONCURRENCY`, `MAX_CHARS`,
+  `JURISDIVORCE_MODEL`, `JURISDIVORCE_ADMIN_TOKEN`). Le backend lit `backend/.env` au démarrage
+  (`load_dotenv()` dans `app/main.py`).
 
-## Les 7 vues
+## Les 6 vues publiques + 1 vue admin
 
 | Vue | Route | Contenu |
 |---|---|---|
-| Accueil | `/` | Hero (badge chiffré, dégradé) + 4 KPIs nationaux **pré-remplis en SSR** + « Comment ça marche » + 6 cartes modules + CTA + bandeau démo |
+| Accueil | `/` | Hero (badge chiffré, dégradé) + 4 KPIs nationaux **pré-remplis en SSR** + « Comment ça marche » + 5 cartes modules + CTA + bandeau démo |
 | **Cockpit Global** | `/analytics` | KPIs réactifs aux filtres croisés + 8 graphiques (comparateur inter-cours, **tendances par année**, distribution des abattements, succès par nature réclamé/obtenu, corrélation PC, distribution PC, motifs de rejet, succès par preuve) |
 | **Simulateur « Mon Cas »** | `/simulateur` | 4 étapes → fourchettes observées, chances par preuve, checklist des preuves gagnantes, alertes pièges, 5 décisions jumelles, **Dire à Notaire** (Word/Markdown/PDF) |
 | **Calculateur juridique** | `/calculateur` | Art. 815-9 : indemnité d'occupation (abattement médian de la cour, **alerte prescription quinquennale**, 10 arrêts comparables) · Art. 1469 : profit subsistant vs dépense faite + taux de rejet constatés |
 | **Explorateur** | `/decisions` | Recherche plein texte **FTS5** + filtres multicritères, cartes avec badges financiers, fiche détaillée (IA vs texte intégral) |
 | **Radar des Pièges** | `/pieges` | 10 motifs de rejet : % des échecs, montant moyen perdu, arrêts illustratifs liés |
-| **Moniteur Pipeline** | `/pipeline` | Archives, compteurs (fichiers lus / parcourues / conservées / analysées), tokens, vitesse, logs, **config à chaud**, **relancer les échecs**, benchmark |
+| **Moniteur Pipeline** *(admin)* | `/pipeline` | 🔒 Protégé par `X-Admin-Token` (Règle d'Or N°7, plus dans la navbar) : archives, compteurs (fichiers lus / parcourues / conservées / analysées), tokens, vitesse, logs, **config à chaud**, **relancer les échecs**, benchmark |
 
 **Filtres croisés universels** (Cockpit + Explorateur) : cour, année, régime, contentieux,
 nature de réclamation, issue, immobilier, fourchette de montants, plein texte — +
@@ -107,9 +113,9 @@ nature de réclamation, issue, immobilier, fourchette de montants, plein texte �
 
 ## Tests & CI
 
-- `tests/` : **27 tests pytest** (filtre normalisé, null vs 0, réparation JSON, troncature,
-  XML DILA, limiteur adaptatif, BatchWriter, 20 routes API, calculateur, pièges, tendances,
-  FTS, démo, config, export). Lancer : `pytest tests -q`.
+- `tests/` : **37 tests pytest** (filtre normalisé, null vs 0, réparation JSON, troncature,
+  XML DILA, limiteur adaptatif, BatchWriter, routes API publiques + **garde admin 404/200**,
+  calculateur, pièges, tendances, FTS, démo, config, export). Lancer : `pytest tests -q`.
 - CI : `.github/workflows/ci.yml` — à chaque push : deps → seed → pytest → dry-run pipeline
   (backend) et npm ci → build (frontend).
 

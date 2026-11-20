@@ -65,7 +65,7 @@ redirigent vers `/simulateur` et `/decisions`.
 ## Commandes de vérification (à exécuter après CHAQUE modification)
 
 ```bash
-# 1. Suite pytest formelle : 26 tests (pipeline + API, ~3 s) — DOIT rester vert
+# 1. Suite pytest formelle : 37 tests (pipeline + API, ~3 s) — DOIT rester vert
 pytest tests -q
 #    (après toute modification du seed/schéma : python -m app.seed depuis backend/ d'abord)
 

@@ -238,3 +238,18 @@ le « contexte seul » est écarté car pollué par le pénal (« épouse X… �
 disque est quasi gratuit (~2 Go pour tout CASS+CAPP), les tokens LLM sont le vrai coût —
 `raw_fiches` découple les deux : on conserve tout, on n'extrait que le pertinent, et on peut
 ré-extraire hors-ligne plus tard sans jamais re-télécharger.
+
+## 30. Page admin `/pipeline` protégée par token, fail-closed (V8, 2026-11-20)
+**Contexte** : la page `/pipeline` était dans la navbar publique et exposait des endpoints
+sans aucune auth : `POST /api/pipeline/control` (pause/stop), `PUT /api/pipeline/config`
+(changer modèle/concurrence → facture de tokens), `POST /retry-failed`, plus la fuite des
+logs internes, conso tokens (quota 300 M/j) et perfs DB. **Décision** : garde
+`admin_guard` sur tout `**/api/pipeline/*` — en-tête `X-Admin-Token` == env
+`JURISDIVORCE_ADMIN_TOKEN`, **fail-closed** (variable absente → 404, pour ne pas révéler
+l'existence des routes) ; page retirée de la navbar (`header.tsx`) et de l'accueil
+(`page.tsx`) ; saisie du token sur la page (localStorage `jd_admin_token`, bouton
+« Verrouiller ») ; `load_dotenv()` ajouté dans `app/main.py` pour que le backend lise
+`backend/.env`. **Pourquoi fail-closed en 404 plutôt que 403** : un 403 confirme
+l'existence d'une route admin à un attaquant. **Pourquoi un simple token partagé et pas
+d'OAuth** : déploiement statique same-origin derrière un tunnel Cloudflare, un seul
+opérateur — un header secret suffit, zéro dépendance. Voir `docs/ADMIN_PIPELINE.md`.
