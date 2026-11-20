@@ -6,6 +6,13 @@ Lancer : uvicorn app.main:app --reload --port 8000  (depuis backend/)
 import os
 import shutil
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()  # lit backend/.env (JURISDIVORCE_ADMIN_TOKEN, JURISDIVORCE_DB, etc.)
+except ImportError:
+    pass
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
