@@ -50,7 +50,12 @@ def normalize_text(text: str) -> str:
 
 
 def decision_filter(raw_text: str) -> Tuple[bool, str]:
-    """Retient 1 terme fort, ou ≥2 termes secondaires dans un contexte divorce/époux.
+    """Retient 1 terme fort, ou ≥1 terme secondaire dans un contexte famille.
+
+    Rappel volontairement large (audit CASS/CAPP : « contexte seul » = 6 411/8 480
+    décisions mais avec bruit pénal « épouse X… » ; « ctx + ≥1 secondaire » = ~2 900/6 800,
+    ~180 M tokens pour les deux fonds, abordable) — les fiches rejetées restent de toute
+    façon conservées en brut dans `raw_fiches`, donc rien n'est jamais perdu.
 
     La pseudonymisation (`[...]`, `***`) n'est JAMAIS un motif de rejet : on ne
     rejette que si les motifs sont explicitement occultés ou si la décision est
@@ -67,7 +72,7 @@ def decision_filter(raw_text: str) -> Tuple[bool, str]:
     if not any(c in n for c in CONTEXT_TERMS):
         return False, "hors champ"
     secondary = [t for t in SECONDARY_TERMS if t in n]
-    if len(secondary) >= 2:
+    if len(secondary) >= 1:
         return True, f"secondaires:{len(secondary)}"
     return False, "aucun terme"
 
@@ -418,11 +423,23 @@ CREATE TABLE IF NOT EXISTS failed_decisions (
 CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY, value TEXT
 );
+-- Fiches brutes : TOUTES les décisions scannées y sont conservées (texte intégral),
+-- même celles que le pré-filtre ne retient pas pour l'extraction LLM.
+CREATE TABLE IF NOT EXISTS raw_fiches (
+    id TEXT PRIMARY KEY,
+    text_md5 TEXT,
+    fonds TEXT,
+    archive TEXT,
+    raw_text TEXT,
+    scanned_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_raw_fiches_md5 ON raw_fiches(text_md5);
 """
 
 # Colonnes ajoutées a posteriori (base créée avant ces champs)
 PIPELINE_MIGRATION_COLUMNS = {
-    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0"},
+    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0",
+                       "raw_saved": "INTEGER DEFAULT 0"},
 }
 
 
@@ -432,6 +449,20 @@ def _migrate_pipeline_columns(conn: sqlite3.Connection) -> None:
         for col, coltype in cols.items():
             if col not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+
+
+def save_raw_fiche(conn: sqlite3.Connection, decision_id: str, md5: str,
+                   raw_text: str, fonds: str, archive: str) -> bool:
+    """Conserve la fiche brute (texte intégral) quoi que décide le pré-filtre.
+
+    Retourne True si la fiche est nouvelle (insérée), False si doublon.
+    Permet de ré-extraire plus tard hors-ligne sans jamais re-télécharger."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO raw_fiches (id, text_md5, fonds, archive, raw_text, scanned_at)"
+        " VALUES (?,?,?,?,?,?)",
+        (decision_id, md5, fonds, archive, raw_text, _now()),
+    )
+    return cur.rowcount > 0
 
 
 def connect_db(db_path: str) -> sqlite3.Connection:

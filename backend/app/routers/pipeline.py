@@ -173,6 +173,12 @@ def benchmark(db: Session = Depends(get_db)):
         except ValueError:
             pass
 
+    try:
+        raw_count = db.execute(text("SELECT COUNT(*) FROM raw_fiches")).scalar() or 0
+        raw_mb = round(db.execute(text("SELECT COALESCE(SUM(LENGTH(raw_text)),0) FROM raw_fiches")).scalar() / 1e6, 1)
+    except Exception:
+        raw_count, raw_mb = 0, 0.0
+
     return Benchmark(
         decisions=db.query(Decision).count(),
         db_list_100_ms=round((t1 - t0) * 1000, 1),
@@ -180,4 +186,6 @@ def benchmark(db: Session = Depends(get_db)):
         db_size_mb=db_size_mb,
         vitesse_par_minute=vitesse,
         tokens_today=s["tokens_today"],
+        raw_fiches=raw_count,
+        raw_fiches_mb=raw_mb,
     )

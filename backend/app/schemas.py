@@ -259,6 +259,9 @@ class Benchmark(BaseModel):
     db_size_mb: float
     vitesse_par_minute: Optional[float]
     tokens_today: int
+    # Fiches brutes conservées (toutes scannées, même non extraites)
+    raw_fiches: int = 0
+    raw_fiches_mb: float = 0.0
 
 
 class HealthStatus(BaseModel):

@@ -213,6 +213,13 @@ export default function PipelinePage() {
               <span className="text-muted-foreground">Vitesse ingestion :</span>{" "}
               <b className="tabular-nums">{benchmark.data?.vitesse_par_minute ?? "—"}/min</b>
             </div>
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Fiches brutes conservées (raw_fiches) :</span>{" "}
+              <b className="tabular-nums">{(benchmark.data?.raw_fiches ?? 0).toLocaleString("fr-FR")}</b>
+              {benchmark.data?.raw_fiches_mb != null && (
+                <span className="text-muted-foreground"> · {benchmark.data.raw_fiches_mb.toLocaleString("fr-FR")} Mo</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

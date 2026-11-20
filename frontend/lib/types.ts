@@ -345,6 +345,9 @@ export interface Benchmark {
   db_size_mb: number;
   vitesse_par_minute: number | null;
   tokens_today: number;
+  /** Fiches brutes conservées (toutes scannées, même non extraites). */
+  raw_fiches?: number;
+  raw_fiches_mb?: number;
 }
 
 export interface HealthStatus {

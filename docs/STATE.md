@@ -127,3 +127,14 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
   Le chemin « 2 secondaires » exige toujours un contexte famille → pas de bruit de procédure civile.
   31 tests verts. Note : 82 714 fichiers CASS < 1 200 chars ne sont jamais scannés (parse) — court
   délibéré (décisions de pure procédure), à réévaluer si un dump TJ voit le jour.
+- **V7 — conservation intégrale des fiches + filtre élargi à ctx+1 secondaire** : nouvelle table
+  `raw_fiches` (id, md5, fonds, archive, `raw_text` intégral) — **toutes** les décisions scannées y
+  sont écrites, même celles que le pré-filtre rejette pour l'extraction LLM (vérifié dry-run CASS :
+  62 705 fiches brutes = 0,26 Go). Le filtre d'extraction passe de « ctx + ≥2 secondaires » à
+  « ctx + ≥1 secondaire » : CASS 1 122 → **2 605 retenues** (~180 M tokens pour CASS+CAPP, < 1 jour
+  de quota). « contexte seul » écarté volontairement (bruit pénal « épouse X… »). Compteur
+  `raw_saved` dans `pipeline_state`, exposé via `/api/pipeline/benchmark` (`raw_fiches`,
+  `raw_fiches_mb`) et affiché dans le moniteur /pipeline. 32 tests verts. **Tunnel : l'URL
+  quick-tunnel est éphémère** (l'ancienne `dot-rebel-…trycloudflare.com` est en NXDOMAIN après
+  mort du process) — relancer `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8100`,
+  URL actuelle : `https://conduct-accept-kijiji-glasgow.trycloudflare.com`.

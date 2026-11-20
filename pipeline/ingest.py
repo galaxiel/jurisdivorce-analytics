@@ -55,6 +55,7 @@ from .core import (
     record_failure,
     repair_json,
     save_decision,
+    save_raw_fiche,
     smart_truncate,
 )
 from .dila import DEFAULT_OPENDATA_URL
@@ -370,26 +371,34 @@ async def run_campaign(args) -> None:
 
             kept: List[Tuple[str, str, str]] = []
             scanned = 0
+            raw_saved = 0
             counters = {"files_read": 0}
             try:
                 for decision_id, text in iter_decisions_from_archive(path, counters):
                     scanned += 1
+                    md5 = hashlib.md5(text.encode("utf-8")).hexdigest()
+                    # Fiche brute conservée QUOI QU'IL ARRIVE (même rejetée par le filtre) :
+                    # plus besoin de re-télécharger pour ré-extraire plus tard.
+                    if save_raw_fiche(conn, decision_id, md5, text, archive["fonds"], os.path.basename(archive["url"])):
+                        raw_saved += 1
+                        if raw_saved % 500 == 0:
+                            conn.commit()
                     keep, reason = decision_filter(text)
                     if not keep:
                         continue
-                    md5 = hashlib.md5(text.encode("utf-8")).hexdigest()
                     if conn.execute("SELECT 1 FROM decisions WHERE text_md5 = ? LIMIT 1", (md5,)).fetchone():
                         continue  # élimination des doublons
                     if conn.execute("SELECT 1 FROM decisions WHERE id = ? LIMIT 1", (decision_id,)).fetchone():
                         continue
                     kept.append((decision_id, text, md5))
+                conn.commit()
             except Exception as exc:
                 state.mark_archive(archive["url"], archive["fonds"], size, "error",
                                    error=f"extraction: {exc}"[:300])
                 state.bump(archives_done=1)
                 continue
 
-            state.bump(decisions_scanned=scanned, decisions_kept=len(kept),
+            state.bump(decisions_scanned=scanned, decisions_kept=len(kept), raw_saved=raw_saved,
                        files_read=counters["files_read"])
             state.log("INFO", f"{os.path.basename(path)} : {counters['files_read']} fichiers XML/JSON lus, "
                               f"{scanned} décisions exploitables, {len(kept)} retenues par le pré-filtre.")

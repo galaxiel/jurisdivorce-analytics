@@ -20,6 +20,7 @@ from pipeline.core import (
     parse_juri_xml,
     repair_json,
     save_decision,
+    save_raw_fiche,
     smart_truncate,
 )
 
@@ -61,6 +62,21 @@ def test_filtre_concubinage_et_demandes_annexes():
     # Toujours hors champ sans contexte famille
     t4 = ("Soulte et licitation ordonnées en matière de succession entre frères et sœurs. " * 30)
     assert decision_filter(t4)[0] is False
+    # Rappel élargi : 1 seul terme secondaire suffit dès qu'il y a le contexte famille
+    t5 = ("Le divorce est prononcé ; une soulte est mise à la charge de l'époux. " * 30)
+    assert decision_filter(t5)[0] is True
+
+def test_save_raw_fiche_conserve_tout():
+    conn = connect_db(":memory:")
+    assert save_raw_fiche(conn, "id-1", "md5-1", "texte intégral de l'arrêt", "CASS", "arch.tar.gz") is True
+    # doublon md5/id -> pas réinséré
+    assert save_raw_fiche(conn, "id-1", "md5-1", "texte intégral de l'arrêt", "CASS", "arch.tar.gz") is False
+    row = conn.execute("SELECT raw_text, fonds FROM raw_fiches WHERE id = 'id-1'").fetchone()
+    assert row["raw_text"] == "texte intégral de l'arrêt" and row["fonds"] == "CASS"
+    # une fiche REJETÉE par le filtre est quand même conservée
+    rejet = "Texte sans aucun terme du champ, juste du contentieux commercial. " * 60
+    assert decision_filter(rejet)[0] is False
+    assert save_raw_fiche(conn, "id-2", "md5-2", rejet, "CAPP", "arch.tar.gz") is True
 
 # ---------------------------------------------------------- normalisation
 def test_normalize_juridiction():

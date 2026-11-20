@@ -226,3 +226,15 @@ précision contrôlée (échantillon CASS inspecté). Les décisions rejetées r
 réexploitables plus tard même si l'UI ne les affiche pas encore. **Pourquoi** : un pré-filtre
 trop étroit perd définitivement des décisions (le texte brut n'est pas gardé) — mieux vaut
 un peu plus de tokens que des angles morts.
+
+## 29. « On ne jette plus rien » : table `raw_fiches` + filtre ctx+1 secondaire (V7)
+**Contexte** : seules les décisions retenues par le pré-filtre étaient stockées — une fiche
+rejetée était perdue définitivement (pas de texte brut conservé) et toute statistique future
+sur ce segment aurait exigé de re-télécharger. **Décision** : (1) nouvelle table `raw_fiches`
+écrite à chaque décision scannée (texte intégral, fonds, archive, md5) — vérifié dry-run CASS :
+62 705 fiches = 0,26 Go, négligeable ; (2) le filtre d'extraction passe à « terme fort OU
+(contexte famille + ≥1 secondaire) » (CASS : 1 122 → 2 605 retenues, ~180 M tokens CASS+CAPP) ;
+le « contexte seul » est écarté car pollué par le pénal (« épouse X… »). **Pourquoi** : le
+disque est quasi gratuit (~2 Go pour tout CASS+CAPP), les tokens LLM sont le vrai coût —
+`raw_fiches` découple les deux : on conserve tout, on n'extrait que le pertinent, et on peut
+ré-extraire hors-ligne plus tard sans jamais re-télécharger.

@@ -110,12 +110,25 @@ CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+-- Fiches brutes : TOUTES les décisions scannées y sont conservées (texte intégral),
+-- même celles que le pré-filtre ne retient pas pour l'extraction LLM -> on ne
+-- re-télécharge jamais rien, une fiche rejetée reste ré-extractible hors-ligne.
+CREATE TABLE IF NOT EXISTS raw_fiches (
+    id TEXT PRIMARY KEY,
+    text_md5 TEXT,
+    fonds TEXT,
+    archive TEXT,
+    raw_text TEXT,
+    scanned_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_raw_fiches_md5 ON raw_fiches(text_md5);
 CREATE INDEX IF NOT EXISTS idx_pipeline_logs_id ON pipeline_logs(id DESC);
 """
 
 # Colonnes ajoutées a posteriori sur les tables pipeline (migrations légères)
 PIPELINE_MIGRATION_COLUMNS = {
-    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0"},
+    "pipeline_state": {"files_read": "INTEGER DEFAULT 0", "retry_failed": "INTEGER DEFAULT 0",
+                       "raw_saved": "INTEGER DEFAULT 0"},
 }
 
 
