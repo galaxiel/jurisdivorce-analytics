@@ -3,23 +3,44 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from conftest import ADMIN_HEADERS
 
 @pytest.fixture(scope="module")
 def client():
     return TestClient(app)
 
-ALL_ROUTES = [
+PUBLIC_ROUTES = [
     "/api/health", "/api/stats/overview", "/api/stats/facets", "/api/stats/comparatif-cours",
     "/api/stats/distribution-pc", "/api/stats/abattement-distribution", "/api/stats/succes-par-nature",
     "/api/stats/pc-correlation", "/api/stats/top-motifs-rejet", "/api/stats/recompenses-par-preuve",
     "/api/stats/tendances", "/api/stats/pieges", "/api/decisions?page_size=2",
-    "/api/decisions/export?format=json", "/api/pipeline/state", "/api/pipeline/logs",
-    "/api/pipeline/archives", "/api/pipeline/config", "/api/pipeline/benchmark", "/api/demo/count",
+    "/api/decisions/export?format=json", "/api/demo/count",
 ]
 
-def test_toutes_les_routes_repondent(client):
-    for url in ALL_ROUTES:
+ADMIN_ROUTES = [
+    "/api/pipeline/state", "/api/pipeline/logs",
+    "/api/pipeline/archives", "/api/pipeline/config", "/api/pipeline/benchmark",
+]
+
+def test_toutes_les_routes_publiques_repondent(client):
+    for url in PUBLIC_ROUTES:
         r = client.get(url)
+        assert r.status_code == 200, (url, r.status_code, r.text[:200])
+
+def test_routes_pipeline_sans_token_sont_404(client):
+    """Fail-closed : sans X-Admin-Token, les routes pipeline renvoient 404."""
+    for url in ADMIN_ROUTES:
+        r = client.get(url)
+        assert r.status_code == 404, (url, r.status_code)
+
+def test_routes_pipeline_avec_mauvais_token_sont_404(client):
+    for url in ADMIN_ROUTES:
+        r = client.get(url, headers={"X-Admin-Token": "mauvais-token"})
+        assert r.status_code == 404, (url, r.status_code)
+
+def test_routes_pipeline_avec_bon_token_repondent(client):
+    for url in ADMIN_ROUTES:
+        r = client.get(url, headers=ADMIN_HEADERS)
         assert r.status_code == 200, (url, r.status_code, r.text[:200])
 
 def test_health_v3(client):
@@ -111,12 +132,16 @@ def test_mode_demo_seed_et_purge(client):
     assert before == 0 and after == 0
 
 def test_config_a_chaud(client):
-    r = client.put("/api/pipeline/config", json={"max_concurrency": 30, "max_chars": 48000})
+    r = client.put("/api/pipeline/config", json={"max_concurrency": 30, "max_chars": 48000}, headers=ADMIN_HEADERS)
     assert r.status_code == 200
     assert r.json()["max_concurrency"] == 30
     # remise aux défauts
-    r = client.put("/api/pipeline/config", json={"max_concurrency": 25, "model": "glm-4-flash", "max_chars": 48000})
+    r = client.put("/api/pipeline/config", json={"max_concurrency": 25, "model": "glm-4-flash", "max_chars": 48000}, headers=ADMIN_HEADERS)
     assert r.status_code == 200
+
+def test_config_a_chaud_sans_token_refuse(client):
+    r = client.put("/api/pipeline/config", json={"max_concurrency": 99})
+    assert r.status_code == 404
 
 def test_export_csv(client):
     r = client.get("/api/decisions/export", params={"format": "csv", "regime": "SEPARATION_DE_BIENS"})

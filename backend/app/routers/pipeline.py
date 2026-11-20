@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,17 @@ from ..schemas import (
 )
 from ..schemas import DecisionFiltersQuery
 
-router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+def admin_guard(x_admin_token: str | None = Header(default=None)) -> None:
+    """Garde admin : toutes les routes /api/pipeline/* exigent l'en-tête
+    X-Admin-Token égal à la variable d'environnement JURISDIVORCE_ADMIN_TOKEN.
+    Fail-closed : si la variable n'est pas définie, tout est refusé (404 pour
+    ne pas révéler l'existence de la route)."""
+    expected = os.getenv("JURISDIVORCE_ADMIN_TOKEN", "")
+    if not expected or x_admin_token != expected:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(prefix="/api/pipeline", tags=["pipeline"], dependencies=[Depends(admin_guard)])
 
 DEFAULTS = dict(
     status="idle", mode=None, current_archive=None, archives_done=0, archives_total=0,

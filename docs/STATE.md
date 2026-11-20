@@ -23,6 +23,7 @@ GLM Flash Zhipu (API openai-compliant) pour l'extraction.
 | Réparation JSON + troncature par sections (en-tête/motifs/dispositif) | tests unitaires ; dispositif conservé à 48 k |
 | Concurrence adaptative 429 (`AdaptiveLimiter` 50→25→12, remonte +10 %/90 s) | test unitaire |
 | Moniteur temps réel (état, logs, archives, pause/reprise/stop) | vu dans le navigateur pendant la campagne CAPP |
+| **🔒 Page admin `/pipeline` protégée** (Règle d'Or N°7) | `admin_guard` sur `**/api/pipeline/*` (fail-closed, `X-Admin-Token` = `JURISDIVORCE_ADMIN_TOKEN`) · retirée de la navbar/accueil · 3 tests 404/200 dans `test_api.py` | `pytest` 37 passed |
 | Export CSV/JSON de la sélection filtrée | CSV 244 lignes ; JSON vérifié |
 | Migration colonnes v2 sans perte (`ensure_schema` ALTER TABLE) | exécutée sur la base pré-v2 |
 | Git/GitHub | commits `cbecc53` v1, `dea6f59` v2, `ccdb09c` fixes CAPP, `bf0d5fd` docs prompts |

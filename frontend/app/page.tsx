@@ -11,7 +11,6 @@ import {
   FileWarning,
   Library,
   Percent,
-  Radio,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -53,12 +52,6 @@ const MODULES = [
     icon: ShieldAlert,
     title: "Radar des Pièges",
     text: "Les 10 motifs de rejet les plus fréquents : % des échecs, montant moyen perdu et arrêts illustratifs pour chaque piège.",
-  },
-  {
-    href: "/pipeline",
-    icon: Radio,
-    title: "Moniteur du Pipeline",
-    text: "Avancement du téléchargement des archives Open Data (CAPP · CASS · TJ), file d'attente GLM Flash, tokens consommés, config à chaud.",
   },
 ];
 

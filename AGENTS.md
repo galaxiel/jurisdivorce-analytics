@@ -151,6 +151,21 @@ python -m pipeline.ingest status --db /tmp/test.db
 | Sources Open Data | `pipeline/dila.py` (BFS + tri + fonds) ; formats : `parse_juri_xml` (XML DILA) et `_json_payloads` (JSON) dans `core.py`/`ingest.py` |
 | DLQ / relance des échecs | table `failed_decisions` + `record_failure()`/`read_config()` (core.py) + `drain_failed` (ingest.py) + POST `/api/pipeline/retry-failed` + CLI `retry-failed` |
 | Moniteur / santé | `backend/app/routers/pipeline.py` + `/api/health` (main.py, champ `synth_demo_count`) + `frontend/app/pipeline/page.tsx` + dot navbar (`header.tsx`) |
+
+## 🔒 Règle d'Or N°7 — Page admin `/pipeline` protégée par token 🚨
+
+> Toutes les routes `**/api/pipeline/*` exigent l'en-tête **`X-Admin-Token`** égal à la
+> variable d'environnement **`JURISDIVORCE_ADMIN_TOKEN`** (garde `admin_guard` dans
+> `backend/app/routers/pipeline.py`, **fail-closed** : variable absente → 404 sur tout
+> `/api/pipeline/*`). La page `/pipeline` n'est **plus dans la navbar ni sur l'accueil** ;
+> on y accède par URL directe + saisie du token (stocké en `localStorage`, envoyé par
+> `adminHeaders()` dans `frontend/lib/api.ts`).
+
+- ❌ Ne jamais remettre `/pipeline` dans `LINKS` (`header.tsx`) ou `MODULES` (`page.tsx`).
+- ❌ Ne jamais retirer la dépendance `Depends(admin_guard)` du routeur pipeline.
+- ✅ Côté serveur : définir `JURISDIVORCE_ADMIN_TOKEN` dans `backend/.env` (jamais committé).
+- ✅ Tests : `tests/conftest.py` pose `JURISDIVORCE_ADMIN_TOKEN=test-admin-token` +
+  `ADMIN_HEADERS` ; `test_api.py` vérifie le 404 sans/mauvais token et le 200 avec.
 | Couche API front (same-origin) | `frontend/lib/api.ts` (`API_BASE=""` par défaut, repli snapshot `public/data/*.json`) + `frontend/next.config.mjs` (rewrites `/api/*` → 8000 en dev) — **ne jamais remettre d'URL absolue en dur** (bug CORS tunnel V7) |
 | Pied de page unique | `frontend/components/legal-disclaimer-footer.tsx` (clause légale Règle d'Or N°5 + source dynamique) — l'ancien `layout/footer.tsx` a été supprimé, ne pas le recréer |
 | Mode démo | `backend/app/routers/demo.py` (`is_demo=true`) + `components/demo-banner.tsx` |

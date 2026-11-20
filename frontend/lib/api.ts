@@ -129,11 +129,32 @@ async function fetchFallback(path: string): Promise<unknown | null> {
   return null;
 }
 
+/* ── Token admin pour les routes /api/pipeline/* (garde backend fail-closed) ── */
+const ADMIN_TOKEN_KEY = "jd_admin_token";
+
+export function getAdminToken(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
+}
+
+export function setAdminToken(token: string): void {
+  if (typeof window === "undefined") return;
+  if (token) window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  else window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+function adminHeaders(path: string): Record<string, string> {
+  if (!path.startsWith("/api/pipeline/")) return {};
+  const t = getAdminToken();
+  return t ? { "X-Admin-Token": t } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
+    const initHeaders = (init?.headers ?? {}) as Record<string, string>;
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
       ...init,
+      headers: { "Content-Type": "application/json", ...adminHeaders(path), ...initHeaders },
     });
     if (!res.ok) {
       const detail = await res.json().catch(() => null);

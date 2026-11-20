@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Calculator, Compass, Home, Library, Radio, Scale, ShieldAlert } from "lucide-react";
+import { BarChart3, Calculator, Compass, Home, Library, Scale, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHealth } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -15,7 +15,7 @@ const LINKS = [
   { href: "/decisions", label: "Jurisprudence", icon: Library },
   { href: "/calculateur", label: "Calculateur", icon: Calculator },
   { href: "/pieges", label: "Pièges", icon: ShieldAlert },
-  { href: "/pipeline", label: "Pipeline", icon: Radio },
+  // /pipeline retiré de la nav publique (admin uniquement, protégé par X-Admin-Token)
 ];
 
 export function Header() {

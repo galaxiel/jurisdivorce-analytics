@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Coins, Database, FileArchive, Gauge, Loader2, Pause, Play, RefreshCw, Save, Square } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, CheckCircle2, Clock, Coins, Database, FileArchive, Gauge, KeyRound, Loader2, Pause, Play, RefreshCw, Save, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 import { KpiCard } from "@/components/analytics/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  getAdminToken,
   postPipelineControl,
   postRetryFailed,
   putPipelineConfig,
+  setAdminToken,
   useBenchmark,
   usePipelineArchives,
   usePipelineConfig,
@@ -21,16 +23,65 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/* Vue 5 — Moniteur du pipeline : avancement archives, file GLM, logs, tokens. */
+/* Vue 5 — Moniteur du pipeline (admin) : avancement archives, file GLM, logs, tokens.
+   Protégé par X-Admin-Token (JURISDIVORCE_ADMIN_TOKEN côté backend). */
 export default function PipelinePage() {
-  const state = usePipelineState();
-  const logs = usePipelineLogs();
-  const archives = usePipelineArchives();
-  const config = usePipelineConfig();
-  const benchmark = useBenchmark();
+  const [token, setToken] = useState("");
+  const [tokenSet, setTokenSet] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const t = getAdminToken();
+    if (t) {
+      setToken(t);
+      setTokenSet(true);
+    }
+  }, []);
+
+  function submitToken() {
+    setAdminToken(token.trim());
+    setTokenSet(Boolean(token.trim()));
+    setRefreshKey((k) => k + 1);
+  }
+
+  const state = usePipelineState(refreshKey);
+  const logs = usePipelineLogs(refreshKey);
+  const archives = usePipelineArchives(refreshKey);
+  const config = usePipelineConfig(refreshKey);
+  const benchmark = useBenchmark(refreshKey);
   const [busy, setBusy] = useState(false);
   const [cfg, setCfg] = useState<{ max_concurrency: string; model: string; max_chars: string } | null>(null);
   const [cfgSaved, setCfgSaved] = useState(false);
+
+  if (!tokenSet) {
+    return (
+      <div className="mx-auto max-w-md space-y-4 px-4 py-16">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <KeyRound className="h-5 w-5 text-primary" /> Accès réservé — Moniteur du Pipeline
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Cette page d&apos;administration est protégée. Saisissez le token admin
+              (<code className="rounded bg-secondary px-1 text-xs">JURISDIVORCE_ADMIN_TOKEN</code>) :
+            </p>
+            <Input
+              type="password"
+              placeholder="Token admin…"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitToken()}
+            />
+            <Button className="w-full" onClick={submitToken} disabled={!token.trim()}>
+              Déverrouiller
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   async function control(action: "pause" | "resume" | "stop") {
     setBusy(true);
@@ -86,6 +137,12 @@ export default function PipelinePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm" variant="ghost" title="Verrouiller (oublier le token)"
+            onClick={() => { setAdminToken(""); setToken(""); setTokenSet(false); }}
+          >
+            <KeyRound className="mr-1 h-3.5 w-3.5" /> Verrouiller
+          </Button>
           <Badge variant={statusVariant.variant} className="px-3 py-1 text-sm">
             {s?.status === "running" && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {statusVariant.label}
