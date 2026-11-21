@@ -192,3 +192,15 @@ python -m pipeline.ingest status --db /tmp/test.db
   SQLAlchemy. Rebuild automatique si compte `decisions_fts` ≠ `decisions`.
 - **null vs 0** : `montant_accorde = 0` réservé aux demandes REJETE (règle prompt n°4 +
   `norm_amount` + save_decision) ; agrégats toujours sur valeurs non-NULL.
+- **Collision `app_config`** : PUT /api/pipeline/config est le SEUL écrivain de la table — soumettre
+  le formulaire /pipeline avec des valeurs périmées pendant une campagne change le modèle à chaud
+  → 400 en série (nom de modèle croisé entre endpoints). Vérifier `pipeline_state.status` avant de
+  toucher à la config ; pendant une campagne, `app_config` attendu = celui de `docs/ETAT_INGESTION.md`.
+- **Champs int du schéma API** : un vrai LLM peut renvoyer `39.4` dans `duree_mariage_annees` etc.
+  → coercition à l'écriture (save_decision), sinon ValidationError sur /stats et /decisions.
+- **Clés multi-fournisseurs** : la clé du provider (`OPENROUTER_API_KEY`…) doit PRÉCÉDER
+  `ZHIPU_API_KEY` dans la résolution, sinon OpenRouter reçoit la clé z.ai (401).
+- **`probe` avant toute campagne** : `python -m pipeline.ingest probe --provider X --model Y --n 5`
+  (exit 0 = GO ≥ 80 %). Lancer `--analyze` sans probe sur un modèle inconnu = brûler la DLQ.
+- **`docs/ETAT_INGESTION.md`** = plan d'ingestion opérationnel (consignes anti-collision, étapes,
+  commandes exactes) — le lire avant toute opération pipeline et le tenir à jour.

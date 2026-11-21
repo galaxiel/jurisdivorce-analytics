@@ -253,3 +253,31 @@ l'existence des routes) ; page retirée de la navbar (`header.tsx`) et de l'accu
 l'existence d'une route admin à un attaquant. **Pourquoi un simple token partagé et pas
 d'OAuth** : déploiement statique same-origin derrière un tunnel Cloudflare, un seul
 opérateur — un header secret suffit, zéro dépendance. Voir `docs/ADMIN_PIPELINE.md`.
+
+## 22. Multi-fournisseurs LLM + `probe` avant campagne (2026-11-21)
+**Contexte** : le pipeline était câblé sur un seul endpoint (Zhipu) ; le tier gratuit z.ai plafonne
+à ~1 000 req/jour ; les gratuits OpenRouter (nemotron/gemma/ling) sont saturés ou inutilisables ;
+changer de modèle à l'aveugle brûle la DLQ. **Décision** : presets `PROVIDER_BASE_URLS` +
+`--provider`/`JURISDIVORCE_PROVIDER` + précédence `<PROVIDER>_API_KEY` > `ZHIPU_API_KEY` ;
+sous-commande `probe --n N` : N vraies décisions, validation **déterministe** (JSON strict,
+montants numériques/null, juridiction normalisable), exit 0 si ≥ 80 % → GO. **Pourquoi sans LLM
+juge** : la conformité de schéma est mécanique — un juge LLM coûterait des tokens et serait
+lui-même faillible ; les violations réelles (ling renvoyait un objet là où un nombre est attendu)
+sont attrapées par un walk typé avec chemins complets (`soulte.montant=…`).
+
+## 23. Dédoublonnage cross-fonds (juridiction, RG, date) — md5 en secours (2026-11-21)
+**Contexte** : l'upsert ne portait que sur `META_COMMUN/ID` ; une décision inédite INCA republiée
+ensuite en CASS porte un autre ID → duplication garantie entre fonds. **Décision** : garde dans
+`save_decision` avant INSERT : candidats `(UPPER(juridiction), date_decision)` puis comparaison
+Python du RG normalisé (`[^A-Z0-9]` retiré) ; md5 en secours seulement (une republication peut
+altérer le texte) ; skip → `return False`. **Pourquoi normaliser en Python et pas en SQL** : la
+base stocke le RG brut avec séparateurs — normaliser côté SQL imposerait une colonne dérivée +
+migration ; le candidat `(juridiction, date)` est déjà sélectif.
+
+## 24. Coercition int des champs entiers du schéma API (2026-11-21)
+**Contexte** : hy4 a produit `duree_mariage_annees: 39.4` → ValidationError Pydantic → 500 sur
+`/api/stats/pc-correlation` (et fiche détail) ; les démos n'avaient jamais déclenché le cas.
+**Décision** : `int()` à l'écriture pour `duree_mariage_annees` + `nombre_enfants` dans
+`save_decision`, CAST SQL des lignes `typeof='real'` existantes. **Pourquoi ne pas toucher aux
+schémas** : le contrat API reste strict (int) — c'est l'ingestion qui doit produire des données
+conformes ; surveiller `delai_procedure_mois`, `occupation_duree_mois`, etc.

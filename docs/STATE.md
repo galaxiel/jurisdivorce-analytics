@@ -139,3 +139,37 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
   quick-tunnel est éphémère** (l'ancienne `dot-rebel-…trycloudflare.com` est en NXDOMAIN après
   mort du process) — relancer `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8100`,
   URL actuelle : `https://conduct-accept-kijiji-glasgow.trycloudflare.com`.
+
+**Mission V9 (2026-11-21, session ZCode — multi-fournisseurs LLM, fonds INCA, durcissement pipeline)** :
+- **Multi-fournisseurs openai-compatibles** (`pipeline/ingest.py`) : presets `PROVIDER_BASE_URLS`
+  (zai, bigmodel, openrouter, groq, mistral, deepseek), flag `--provider` + env
+  `JURISDIVORCE_PROVIDER`, précédence clé `<PROVIDER>_API_KEY` > `ZHIPU_API_KEY` (sinon OpenRouter
+  reçoit la clé z.ai → 401). Clé **z.ai internationale** (pas open.bigmodel.cn : chinois + vérif
+  d'identité chinoise) dans `backend/.env`.
+- **Sous-commande `probe`** (idée utilisateur) : teste N décisions réelles (DLQ ou raw_fiches) avec
+  un modèle et un validateur **déterministe sans LLM juge** (JSON strict, montants numériques/null,
+  juridiction normalisable) → exit 0 = GO (≥ 80 %) / 1 = NO-GO. Verdicts réels : `tencent/hy4-flash`
+  **5/5 GO** (~2-3 € la campagne complète) ; nemotron/gemma/ling gratuits OpenRouter : NO-GO.
+- **Fonds INCA (Cassation inédite)** : `KNOWN_FONDS` += INCA ; dump 664 Mo téléchargé ; test
+  `fonds_from_path` (arbo `…/juri/inca/global/…` + nom de fichier) et `parse_juri_xml` (structure
+  identique CASS + `PUBLI_BULL publie="non"`). **Dédoublonnage cross-fonds** ajouté dans
+  `save_decision` (une inédite INCA republiée en CASS porte un autre META_COMMUN/ID) : clé
+  (juridiction UPPER, RG normalisé sans séparateurs, date) en primaire, `text_md5` en secours.
+- **Fix DLQ fatal** : `record_failure(attempt=)` → `attempts=` (divergence V7/V8 — un TypeError
+  tuait toute la campagne à la 1ʳᵉ décision en échec au lieu d'écrire la DLQ).
+- **Fix timezone backend** : `/state` et `/benchmark` soustrayaient un datetime naïf d'un aware
+  (le pipeline écrit `…+00:00`) → TypeError 500 sur le moniteur dès qu'une vraie campagne tourne ;
+  fix tz-safe aux deux endroits (pipeline.py:66 et :183).
+- **Fix champs int** : les vrais LLM produisent des fractionnaires (`duree_mariage_annees: 39.4`)
+  → ValidationError Pydantic → 500 sur `/api/stats/pc-correlation` ; coercition `int()` dans
+  save_decision + CAST SQL des lignes existantes. **Pattern : tout champ int du schéma peut
+  recevoir un float d'un vrai modèle.**
+- **Collision de campagne + remèdes** : `app_config` écrasé via PUT /api/pipeline/config (le SEUL
+  écrivain de la table) → ×5 276 « glm-4-flash is not a valid model ID » (campagne OpenRouter lisant
+  la config à chaud) + ×~9 400 « 1211 Unknown Model » (drain backend = client Zhipu). Tout
+  retentable en DLQ ; config restaurée à chaud ; **watchdog 5 min** pendant `status=running` ;
+  **`docs/ETAT_INGESTION.md` créé** = plan opérationnel + consignes anti-collision (à lire avant
+  toute opération pipeline).
+- **Campagne hy4-flash en cours** (OpenRouter, ~2-3 €, décision utilisateur) : ~1 600+ décisions
+  réelles analysées ; démo SYNTHETIQUE_DEMO supprimée (base 100 % réelle) ; DLQ ~15 k lignes à
+  drainer en fin de campagne. **40 tests verts.**

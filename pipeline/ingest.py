@@ -50,6 +50,7 @@ from .core import (
     decision_filter,
     extract_id,
     extract_text,
+    normalize_juridiction,
     parse_juri_xml,
     read_config,
     record_failure,
@@ -63,8 +64,37 @@ from .dila import DEFAULT_OPENDATA_URL
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
-ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
+# Presets de fournisseurs openai-compatibles — un ZHIPU_BASE_URL explicite reste prioritaire.
+PROVIDER_BASE_URLS = {
+    "zai": "https://api.z.ai/api/paas/v4/",
+    "bigmodel": "https://open.bigmodel.cn/api/paas/v4/",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+}
+DEFAULT_PROVIDER = "bigmodel"
+
+
+def resolve_provider(provider: Optional[str], explicit_url: Optional[str]) -> str:
+    """URL de base du LLM : ZHIPU_BASE_URL explicite > preset du provider > défaut bigmodel."""
+    if explicit_url:
+        return explicit_url
+    if provider:
+        p = provider.strip().lower()
+        if p not in PROVIDER_BASE_URLS:
+            raise ValueError(
+                f"Fournisseur inconnu : {provider!r} (choix : {', '.join(sorted(PROVIDER_BASE_URLS))})"
+            )
+        return PROVIDER_BASE_URLS[p]
+    return PROVIDER_BASE_URLS[DEFAULT_PROVIDER]
+
+
+_PROVIDER_ENV = os.getenv("JURISDIVORCE_PROVIDER", "").strip().lower() or None
+ZHIPU_API_KEY = (
+    os.getenv(f"{_PROVIDER_ENV.upper()}_API_KEY", "") if _PROVIDER_ENV else ""
+) or os.getenv("ZHIPU_API_KEY", "")
+ZHIPU_BASE_URL = resolve_provider(_PROVIDER_ENV, os.getenv("ZHIPU_BASE_URL"))
 MODEL = os.getenv("JURISDIVORCE_MODEL", "glm-4-flash")
 MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "25"))
 MAX_CHARS = int(os.getenv("MAX_CHARS", "48000"))
@@ -254,7 +284,7 @@ async def analyze_decision(conn, state: PipelineStateWriter, limiter: AdaptiveLi
             last_exc = exc
 
     if last_exc is not None:
-        record_failure(conn, decision_id, truncated, last_exc, attempt=attempt)
+        record_failure(conn, decision_id, truncated, last_exc, attempts=attempt)
         state.bump(decisions_failed=1)
         state.log("ERROR", f"Décision {decision_id} en file d'échecs (DLQ) : {last_exc}")
     return False
@@ -272,7 +302,10 @@ async def run_campaign(args) -> None:
     state = PipelineStateWriter(db_path)
 
     if args.analyze and not client and not args.dry_run:
-        sys.exit("ZHIPU_API_KEY non défini : requis avec --analyze (ou utilisez --dry-run).")
+        sys.exit(
+            "Clé API manquante : définissez ZHIPU_API_KEY — ou la clé du fournisseur "
+            "(ex. OPENROUTER_API_KEY avec --provider openrouter ou JURISDIVORCE_PROVIDER=openrouter)."
+        )
 
     # 1) Inventaire des archives (manifest + skip des déjà traitées)
     if args.local:
@@ -501,6 +534,89 @@ def set_control(db_path: str, action: str) -> None:
     conn.close()
 
 
+# --------------------------------------------------------------------------- Probe (test modèle avant campagne)
+_MONTANT_KEYS = ("montant", "capital", "valeur", "indemnite", "pension", "soulte",
+                 "frais", "duree", "taux", "loyer")
+
+
+def _validate_extraction(data: dict) -> List[str]:
+    """Validation déterministe d'une extraction (aucun LLM juge requis) : champs chiffrés
+    numériques ou null (règle null vs 0), juridiction normalisable."""
+    problems: List[str] = []
+
+    def walk(o: object, path: str = "") -> None:
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if isinstance(v, (dict, list)):  # structure légitime du schéma → on descend
+                    walk(v, f"{path}{k}.")
+                elif any(t in k.lower() for t in _MONTANT_KEYS):
+                    if not (v is None or (isinstance(v, (int, float)) and not isinstance(v, bool))):
+                        problems.append(f"{path}{k}={v!r}"[:60])
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                walk(v, f"{path}{i}.")
+
+    walk(data)
+    jur = normalize_juridiction((data.get("metadata") or {}).get("juridiction") or "")
+    if not jur:
+        problems.append("juridiction non normalisable")
+    return problems
+
+
+def probe_model(args: argparse.Namespace) -> None:
+    """Sub-command `probe` : teste N décisions réelles (DLQ ou raw_fiches) avec un modèle
+    et affiche un verdict déterministe. Exit 0 = GO (≥ 80 % propres), exit 1 = NO-GO."""
+    from openai import OpenAI  # client synchrone — usage ponctuel
+
+    try:
+        base_url = resolve_provider(
+            args.provider or os.getenv("JURISDIVORCE_PROVIDER"), os.getenv("ZHIPU_BASE_URL"))
+    except ValueError as exc:
+        sys.exit(str(exc))
+    prov = (args.provider or os.getenv("JURISDIVORCE_PROVIDER") or "").strip().lower()
+    api_key = (os.getenv(f"{prov.upper()}_API_KEY", "") if prov else "") or os.getenv("ZHIPU_API_KEY", "")
+    if not api_key:
+        sys.exit("Clé API manquante (ZHIPU_API_KEY ou <PROVIDER>_API_KEY, ex. OPENROUTER_API_KEY).")
+    model = args.model or os.getenv("JURISDIVORCE_MODEL", MODEL)
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    conn = connect_db(os.path.abspath(args.db))
+    rows = conn.execute(
+        "SELECT decision_id, text_truncated FROM failed_decisions ORDER BY RANDOM() LIMIT ?",
+        (args.n,),
+    ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT decision_id, substr(raw_text, 1, 12000) AS text_truncated FROM raw_fiches ORDER BY RANDOM() LIMIT ?",
+            (args.n,),
+        ).fetchall()
+    conn.close()
+    if not rows:
+        sys.exit("Aucune décision disponible pour le probe (DLQ et raw_fiches vides).")
+    print(f"Probe {len(rows)} décision(s) réelle(s) → {model} @ {base_url}")
+    clean = 0
+    for i, row in enumerate(rows, 1):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",
+                     "content": f"Voici le texte de la décision de justice :\n\n{row['text_truncated']}"},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            data = json.loads(resp.choices[0].message.content)
+            problems = _validate_extraction(data)
+            clean += 0 if problems else 1
+            print(f"  [{i}/{len(rows)}] {row['decision_id']} → "
+                  f"{'OK' if not problems else 'alertes : ' + ' ; '.join(problems[:3])}")
+        except Exception as exc:
+            print(f"  [{i}/{len(rows)}] {row['decision_id']} → ÉCHEC {str(exc)[:90]}")
+    print(f"=== Probe : {clean}/{len(rows)} extractions propres ({model}) ===")
+    sys.exit(0 if clean / len(rows) >= 0.8 else 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingestion massive Judilibre → GLM Flash → base SQL")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -516,6 +632,9 @@ def main() -> None:
     run_p.add_argument("--max-chars", type=int, default=None,
                        help=f"Budget de troncature par décision (défaut {MAX_CHARS} ; ~16000 pour viser 40-50k décisions/jour)")
     run_p.add_argument("--max-archives", type=int, default=None, help="Limiter le nombre d'archives (test)")
+    run_p.add_argument("--provider", default=None,
+                       help="Fournisseur openai-compatible : " + ", ".join(sorted(PROVIDER_BASE_URLS))
+                            + " (clé <PROVIDER>_API_KEY, ex. OPENROUTER_API_KEY ; ZHIPU_BASE_URL reste prioritaire)")
     run_p.add_argument("--force", action="store_true", help="Retraiter les archives déjà 'done'")
     run_p.add_argument("--keep-archives", action="store_true", help="Conserver les archives téléchargées sur disque")
     run_p.add_argument("--db", default=DEFAULT_DB)
@@ -533,8 +652,24 @@ def main() -> None:
     retry_p = sub.add_parser("retry-failed", help="Relancer les décisions en échec (DLQ)")
     retry_p.add_argument("--db", default=DEFAULT_DB)
 
+    probe_p = sub.add_parser("probe", help="Tester un modèle sur N décisions réelles avant de lancer (GO/NO-GO)")
+    probe_p.add_argument("--provider", default=None, help="Fournisseur openai-compatible (cf. --provider de run)")
+    probe_p.add_argument("--model", default=None, help="Nom du modèle (défaut JURISDIVORCE_MODEL)")
+    probe_p.add_argument("--n", type=int, default=5, help="Nombre de décisions testées (défaut 5)")
+    probe_p.add_argument("--db", default=DEFAULT_DB)
+    probe_p.set_defaults(func=probe_model)
+
     args = parser.parse_args()
     if args.command == "run":
+        global client
+        if args.provider:
+            try:
+                base_url = resolve_provider(args.provider, os.getenv("ZHIPU_BASE_URL"))
+            except ValueError as exc:
+                sys.exit(str(exc))
+            provider_key = f"{args.provider.strip().upper()}_API_KEY"
+            api_key = os.getenv(provider_key, "") or os.getenv("ZHIPU_API_KEY", "")
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url) if api_key else None
         asyncio.run(args.func(args))
     elif args.command == "retry-failed":
         asyncio.run(retry_failed_cli(args.db))

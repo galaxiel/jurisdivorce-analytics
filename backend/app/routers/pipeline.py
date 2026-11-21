@@ -6,7 +6,7 @@ Le pipeline écrit son heartbeat dans pipeline_state / pipeline_logs / processed
 """
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -63,7 +63,9 @@ def state(db: Session = Depends(get_db)):
     if s["status"] == "running" and s["started_at"]:
         try:
             started = datetime.fromisoformat(s["started_at"])
-            minutes = max((datetime.utcnow() - started).total_seconds() / 60.0, 0.1)
+            if started.tzinfo is None:  # timestamp naïf (anciens runs) → considéré UTC
+                started = started.replace(tzinfo=timezone.utc)
+            minutes = max((datetime.now(timezone.utc) - started).total_seconds() / 60.0, 0.1)
             vitesse = round(s["decisions_analyzed"] / minutes, 1)
         except ValueError:
             pass
@@ -178,7 +180,10 @@ def benchmark(db: Session = Depends(get_db)):
     vitesse = None
     if s["status"] == "running" and started:
         try:
-            minutes = max((datetime.utcnow() - datetime.fromisoformat(started)).total_seconds() / 60.0, 0.1)
+            started_dt = datetime.fromisoformat(started)
+            if started_dt.tzinfo is None:  # timestamp naïf (anciens runs) → considéré UTC
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            minutes = max((datetime.now(timezone.utc) - started_dt).total_seconds() / 60.0, 0.1)
             vitesse = round(s["decisions_analyzed"] / minutes, 1)
         except ValueError:
             pass

@@ -212,6 +212,34 @@ def test_parse_juri_xml():
     assert "COUR D'APPEL DE VERSAILLES" in parsed["text"]
     assert "1994-9050" in parsed["text"]
 
+# ---------------------------------------------------------- fonds INCA (Cassation inédite)
+SAMPLE_INCA_XML = (
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><TEXTE_JURI_JUDI><META><META_COMMUN>"
+    "<ID>INCA0001234</ID><NATURE>ARRET</NATURE><DATE_TEXTE>2024-03-15</DATE_TEXTE></META_COMMUN>"
+    "<META_SPEC><META_JURI><JURIDICTION>COUR DE CASSATION</JURIDICTION>"
+    "<DATE_DEC>2024-03-15</DATE_DEC></META_JURI></META_SPEC></META>"
+    "<META_JURI_JUDI><NUMEROS_AFFAIRES><NUMERO_AFFAIRE>R 23-10.456</NUMERO_AFFAIRE></NUMEROS_AFFAIRES></META_JURI_JUDI>"
+    "<PUBLI_BULL publie=\"non\"/>"
+    "<TEXTE><BLOC_TEXTUEL><CONTENU>"
+    + "Pourvoi inédit : la prestation compensatoire et la liquidation du régime matrimonial sont examinées. " * 24
+    + "</CONTENU></BLOC_TEXTUEL></TEXTE></TEXTE_JURI_JUDI>"
+).encode()
+
+
+def test_fonds_inca_et_parse_inca():
+    from pipeline.dila import fonds_from_path
+    # fonds détecté depuis le nom de fichier ET depuis l'arborescence (…/juri/inca/global/…)
+    assert fonds_from_path(
+        "https://echanges.dila.gouv.fr/OPENDATA/INCA/Freemium_inca_global_20261108-140000.tar.gz") == "INCA"
+    assert fonds_from_path(
+        "archive/20261108/juri/inca/global/civile/JURI/TEXT/000001.xml") == "INCA"
+    # structure identique à CASS : TEXTE_JURI_JUDI + PUBLI_BULL publie="non" (inédite)
+    parsed = parse_juri_xml(SAMPLE_INCA_XML)
+    assert parsed and parsed["id"] == "INCA0001234"
+    assert "COUR DE CASSATION" in parsed["text"]
+    assert "R 23-10.456" in parsed["text"]
+
+
 # ---------------------------------------------------------- limiteur adaptatif
 def test_adaptive_limiter_halving_and_set_target():
     async def scenario():
@@ -223,6 +251,38 @@ def test_adaptive_limiter_halving_and_set_target():
         await lim.set_target(40)
         assert lim.max_size == 40
     asyncio.run(scenario())
+
+# ---------------------------------------------------------- Fournisseurs LLM (openai-compatibles)
+def test_resolve_provider_presets():
+    from pipeline.ingest import resolve_provider, PROVIDER_BASE_URLS
+    # preset connu, casse insensible
+    assert resolve_provider("OpenRouter", None) == "https://openrouter.ai/api/v1"
+    assert resolve_provider("zai", None) == "https://api.z.ai/api/paas/v4/"
+    # URL explicite : prioritaire sur tout
+    assert resolve_provider("openrouter", "https://exemple.local/v1") == "https://exemple.local/v1"
+    # défaut (bigmodel) sans provider ni URL
+    assert resolve_provider(None, None) == PROVIDER_BASE_URLS["bigmodel"]
+    # fournisseur inconnu -> ValueError
+    with pytest.raises(ValueError):
+        resolve_provider("inconnu", None)
+
+
+# ---------------------------------------------------------- Validation déterministe des extractions
+def test_validate_extraction_regles_chiffres():
+    from pipeline.ingest import _validate_extraction
+    # extraction propre : montants numériques ou null, juridiction normalisable
+    bon = {"metadata": {"juridiction": "CA de Lyon"}, "montant_accorde": 12500, "capital": None,
+           "indemnite_occupation": {"demandee": True, "montant_accorde": 25000}}
+    assert _validate_extraction(bon) == []
+    # montants non numériques → alertes (avec chemin complet)
+    mauvais = {"metadata": {"juridiction": "CA de Lyon"}, "montant_accorde": "12 500 €",
+               "soulte": {"montant": "12500 €"}, "taux": True}
+    problems = _validate_extraction(mauvais)
+    assert any("montant_accorde" in p for p in problems)
+    assert any("soulte.montant" in p for p in problems)
+    assert any("taux" in p for p in problems)
+    # juridiction absente/non normalisable → alerte
+    assert any("juridiction" in p for p in _validate_extraction({"montant_accorde": 5}))
 
 # ---------------------------------------------------------- BatchWriter
 def test_batch_writer_writes_all_decisions(tmp_path):

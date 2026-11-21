@@ -597,6 +597,27 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
     annexes = ex.get("issue_demandes_annexes") or {}
 
     criteres = pc.get("criteres_determinants") or pc.get("criteres") or []
+    # Dédoublonnage cross-fonds (ex. inédite INCA republiée ensuite en CASS sous un autre
+    # META_COMMUN/ID) : clé (juridiction, RG normalisé, date) en primaire, text_md5 en secours.
+    jur_norm = (normalize_juridiction(meta.get("juridiction"))
+                or (meta.get("juridiction") or "")).strip().upper()
+    rg_key = re.sub(r"[^A-Z0-9]", "", (meta.get("numero_pourvoi_rg") or "").upper())
+    if jur_norm and meta.get("date_decision"):
+        for dup in conn.execute(
+            "SELECT id, numero_rg, text_md5 FROM decisions WHERE UPPER(juridiction)=? "
+            "AND date_decision=? AND id<>?",
+            (jur_norm, meta.get("date_decision"), decision_id),
+        ).fetchall():
+            rg_old = re.sub(r"[^A-Z0-9]", "", (dup["numero_rg"] or "").upper())
+            if (rg_key and rg_old and rg_key == rg_old) or (md5 and dup["text_md5"] == md5):
+                return False
+    # Champs entiers côté schéma API : les modèles (hy4…) peuvent renvoyer 39.4 → 39
+    duree_mariage = _num(ctx.get("duree_mariage_annees"))
+    if duree_mariage is not None:
+        duree_mariage = int(duree_mariage)
+    nombre_enfants = _num(ctx.get("nombre_enfants"))
+    if nombre_enfants is not None:
+        nombre_enfants = int(nombre_enfants)
     with conn:
         conn.execute(
             """INSERT OR REPLACE INTO decisions (
@@ -623,7 +644,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 normalize_juridiction(meta.get("juridiction")),
                 meta.get("chambre"), meta.get("date_decision"),
                 normalize_type_procedure(ctx.get("type_procedure")), normalize_regime(ctx.get("regime_matrimonial")),
-                _num(ctx.get("duree_mariage_annees")), _num(ctx.get("nombre_enfants")), _num(ctx.get("age_epoux_moyen")),
+                duree_mariage, nombre_enfants, _num(ctx.get("age_epoux_moyen")),
                 _bool(biens.get("bien_immobilier_principal")), norm_amount(biens.get("valeur_bien_principal")),
                 _bool(biens.get("entreprises_societes")), _bool(biens.get("comptes_epargne")),
                 _bool(occ.get("demandee")), _bool(occ.get("accordee")),

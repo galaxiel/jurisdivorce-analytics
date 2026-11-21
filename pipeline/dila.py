@@ -20,7 +20,7 @@ import httpx
 
 HREF_RE = re.compile(r'href="([^"?#]+)"', re.IGNORECASE)
 ARCHIVE_RE = re.compile(r"\.(tar\.gz|tgz|zip)$", re.IGNORECASE)
-KNOWN_FONDS = ("CAPP", "CASS", "TJ", "TGE", "TC", "TGO", "CPH", "TOM")
+KNOWN_FONDS = ("CAPP", "CASS", "INCA", "TJ", "TGE", "TC", "TGO", "CPH", "TOM")
 DEFAULT_OPENDATA_URL = "https://echanges.dila.gouv.fr/OPENDATA/"
 
 
