@@ -92,3 +92,8 @@ thinking sur OpenRouter — la clé « zcode » est plafonnée à 5 $ (4,18 $ d�
 `set -a && source backend/.env && set +a && export JURISDIVORCE_PROVIDER=openrouter && python -m pipeline.ingest run --local archives/Freemium_capp… archives/Freemium_inca… archives/Freemium_cass… --force --analyze --keep-archives`
 (app_config attendu : model=tencent/hy4-flash, max_concurrency=8, max_chars=16000).
 Puis purge DLQ : `DELETE FROM failed_decisions WHERE decision_id IN (SELECT id FROM decisions)`.
+
+**Leçon probe (2026-11-21)** : conformité ≠ complétude — deepseek 5/5 conforme mais 16 champs
+remplis vs 64 pour hy4 (les sections analytiques du produit omises). `_couverture_champs` ajouté
+au probe (couverture moyenne affichée par décision, alerte si < 20 champs/décision). Choix final
+mesuré : **hy4-flash sans thinking** (0,00032 $/déc, meilleur sur coût ET complétude).

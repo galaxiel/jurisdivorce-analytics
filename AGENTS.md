@@ -204,3 +204,8 @@ python -m pipeline.ingest status --db /tmp/test.db
   (exit 0 = GO ≥ 80 %). Lancer `--analyze` sans probe sur un modèle inconnu = brûler la DLQ.
 - **`docs/ETAT_INGESTION.md`** = plan d'ingestion opérationnel (consignes anti-collision, étapes,
   commandes exactes) — le lire avant toute opération pipeline et le tenir à jour.
+- **Probe conforme ≠ extraction complète** : deepseek était 5/5 au validateur (conformité)
+  mais ne remplissait que 16 champs vs **64 pour hy4** (sections analytiques omises : pièges,
+  points forts, preuves déterminantes — le cœur du produit). Le `probe` affiche désormais la
+  **couverture moyenne** (`_couverture_champs`, alerte si < 20 champs/décision) : comparer les
+  modèles sur les DEUX axes (conformité + complétude) et se méfier des JSON « compacts ».

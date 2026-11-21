@@ -569,6 +569,27 @@ def _validate_extraction(data: dict) -> List[str]:
     return problems
 
 
+def _couverture_champs(data: dict) -> int:
+    """Nombre de champs feuilles remplis (non null/vide) — métrique de COMPLÉTUDE, distincte
+    de la conformité : deepseek était 5/5 conforme au validateur mais ne remplissait que
+    16 champs là où hy4 en remplissait 64 (pièges, points forts, preuves omis)."""
+    n = 0
+
+    def walk(o: object) -> None:
+        nonlocal n
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif o not in (None, '', [], {}):
+            n += 1
+
+    walk(data)
+    return n
+
+
 def probe_model(args: argparse.Namespace) -> None:
     """Sub-command `probe` : teste N décisions réelles (DLQ ou raw_fiches) avec un modèle
     et affiche un verdict déterministe. Exit 0 = GO (≥ 80 % propres), exit 1 = NO-GO."""
@@ -603,6 +624,7 @@ def probe_model(args: argparse.Namespace) -> None:
     if "openrouter" in base_url:
         probe_kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     clean = 0
+    couv_total = 0
     for i, row in enumerate(rows, 1):
         try:
             resp = client.chat.completions.create(
@@ -618,12 +640,18 @@ def probe_model(args: argparse.Namespace) -> None:
             )
             data = json.loads(resp.choices[0].message.content)
             problems = _validate_extraction(data)
+            couv = _couverture_champs(data)
+            couv_total += couv
             clean += 0 if problems else 1
             print(f"  [{i}/{len(rows)}] {row['decision_id']} → "
-                  f"{'OK' if not problems else 'alertes : ' + ' ; '.join(problems[:3])}")
+                  f"{'OK' if not problems else 'alertes : ' + ' ; '.join(problems[:3])} ({couv} champs remplis)")
         except Exception as exc:
             print(f"  [{i}/{len(rows)}] {row['decision_id']} → ÉCHEC {str(exc)[:90]}")
-    print(f"=== Probe : {clean}/{len(rows)} extractions propres ({model}) ===")
+    couv_moy = couv_total / len(rows)
+    print(f"=== Probe : {clean}/{len(rows)} extractions conformes · couverture moyenne "
+          f"{couv_moy:.1f} champs/décision ({model}) ===")
+    if couv_moy < 20:
+        print("⚠ Couverture moyenne faible : comparer avec un autre modèle (conforme ≠ complet).")
     sys.exit(0 if clean / len(rows) >= 0.8 else 1)
 
 

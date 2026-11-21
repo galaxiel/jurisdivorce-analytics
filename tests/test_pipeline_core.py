@@ -284,6 +284,15 @@ def test_validate_extraction_regles_chiffres():
     # juridiction absente/non normalisable → alerte
     assert any("juridiction" in p for p in _validate_extraction({"montant_accorde": 5}))
 
+
+# ---------------------------------------------------------- Couverture (complétude)
+def test_couverture_champs():
+    from pipeline.ingest import _couverture_champs
+    # null/vide/listes vides ne comptent pas ; les feuilles imbriquées oui
+    assert _couverture_champs({"a": 1, "b": None, "c": "", "d": [], "e": {"f": 2, "g": None}}) == 2
+    riche = {"metadata": {"juridiction": "CA de Lyon"}, "pieges": ["a", "b"], "montant": 5}
+    assert _couverture_champs(riche) == 4
+
 # ---------------------------------------------------------- BatchWriter
 def test_batch_writer_writes_all_decisions(tmp_path):
     async def scenario():
