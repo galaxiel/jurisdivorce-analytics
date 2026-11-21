@@ -97,3 +97,16 @@ Puis purge DLQ : `DELETE FROM failed_decisions WHERE decision_id IN (SELECT id F
 remplis vs 64 pour hy4 (les sections analytiques du produit omises). `_couverture_champs` ajouté
 au probe (couverture moyenne affichée par décision, alerte si < 20 champs/décision). Choix final
 mesuré : **hy4-flash sans thinking** (0,00032 $/déc, meilleur sur coût ET complétude).
+
+**Mise à jour financement (2026-11-21 soir) — RÉSOLU, EN ATTENTE DE GO UTILISATEUR** :
+l'API Nous Research du portail de l'utilisateur (`NOUS_API_KEY` dans backend/.env,
+passerelle https://inference-api.nousresearch.com/v1, 415 modèles) expose
+**`tencent/hy4-flash:free` à 0,000 $/M** — le modèle validé 5/5 pour qualité ET complétude
+(50,8 champs remplis/décision au probe). Preset `nous` ajouté au pipeline (clé lue via
+`NOUS_API_KEY`). **Campagne complète 12 256 extractions à 0 €** — la décision de lancement
+appartient à l'utilisateur (il a refusé le lancement sans GO : leçon retenue). Commande :
+```bash
+set -a && source backend/.env && set +a && export JURISDIVORCE_PROVIDER=nous
+python -m pipeline.ingest run --local archives/Freemium_capp… archives/Freemium_inca… archives/Freemium_cass… --force --analyze --keep-archives
+```
+Probe : `python -m pipeline.ingest probe --provider nous --model "tencent/hy4-flash:free" --n 5`.

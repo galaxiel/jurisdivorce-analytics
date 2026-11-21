@@ -69,6 +69,7 @@ PROVIDER_BASE_URLS = {
     "zai": "https://api.z.ai/api/paas/v4/",
     "bigmodel": "https://open.bigmodel.cn/api/paas/v4/",
     "openrouter": "https://openrouter.ai/api/v1",
+    "nous": "https://inference-api.nousresearch.com/v1",
     "groq": "https://api.groq.com/openai/v1",
     "mistral": "https://api.mistral.ai/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -215,7 +216,7 @@ MAX_ATTEMPTS = 5
 
 async def call_llm(text: str, model: str) -> Tuple[dict, int]:
     kwargs: dict = {"response_format": {"type": "json_object"}, "temperature": 0.1}
-    if "openrouter" in str(getattr(client, "base_url", "")):
+    if "openrouter" in str(getattr(client, "base_url", "")) or "nousresearch" in str(getattr(client, "base_url", "")):
         # le thinking des modèles hy4/deepseek facture ~80 % des tokens de sortie pour rien
         kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     response = await client.chat.completions.create(
@@ -621,7 +622,7 @@ def probe_model(args: argparse.Namespace) -> None:
         sys.exit("Aucune décision disponible pour le probe (DLQ et raw_fiches vides).")
     print(f"Probe {len(rows)} décision(s) réelle(s) → {model} @ {base_url}")
     probe_kwargs: dict = {}
-    if "openrouter" in base_url:
+    if "openrouter" in base_url or "nousresearch" in base_url:
         probe_kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     clean = 0
     couv_total = 0
