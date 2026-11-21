@@ -214,14 +214,17 @@ MAX_ATTEMPTS = 5
 
 
 async def call_llm(text: str, model: str) -> Tuple[dict, int]:
+    kwargs: dict = {"response_format": {"type": "json_object"}, "temperature": 0.1}
+    if "openrouter" in str(getattr(client, "base_url", "")):
+        # le thinking des modèles hy4/deepseek facture ~80 % des tokens de sortie pour rien
+        kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     response = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Voici le texte de la décision de justice :\n\n{text}"},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.1,
+        **kwargs,
     )
     usage = getattr(response, "usage", None)
     tokens = int(getattr(usage, "total_tokens", 0) or 0)
@@ -596,6 +599,9 @@ def probe_model(args: argparse.Namespace) -> None:
     if not rows:
         sys.exit("Aucune décision disponible pour le probe (DLQ et raw_fiches vides).")
     print(f"Probe {len(rows)} décision(s) réelle(s) → {model} @ {base_url}")
+    probe_kwargs: dict = {}
+    if "openrouter" in base_url:
+        probe_kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     clean = 0
     for i, row in enumerate(rows, 1):
         try:
@@ -608,6 +614,7 @@ def probe_model(args: argparse.Namespace) -> None:
                 ],
                 response_format={"type": "json_object"},
                 temperature=0.1,
+                **probe_kwargs,
             )
             data = json.loads(resp.choices[0].message.content)
             problems = _validate_extraction(data)
