@@ -59,7 +59,7 @@ from .core import (
     save_raw_fiche,
     smart_truncate,
 )
-from .dila import DEFAULT_OPENDATA_URL
+from .dila import DEFAULT_OPENDATA_URL, fonds_from_path
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -312,7 +312,7 @@ async def run_campaign(args) -> None:
         paths: List[str] = []
         for pattern in args.local:
             paths.extend(sorted(glob.glob(pattern)) or [pattern])
-        archives = [{"url": os.path.abspath(p), "fonds": "LOCAL"} for p in paths if os.path.exists(p)]
+        archives = [{"url": os.path.abspath(p), "fonds": fonds_from_path(p)} for p in paths if os.path.exists(p)]
         missing = [p for p in paths if not os.path.exists(p)]
         for m in missing:
             state.log("WARN", f"Archive locale introuvable : {m}")

@@ -54,11 +54,13 @@
 7. **Commit + push** de tous les correctifs non commités (attempts DLQ, providers+probe,
    timezone backend, INCA+fonds+test, garde dédoublonnage, duree int, watchdog note).
 
-## Correctifs non commités au 2026-11-21 (working tree)
+## Correctifs (commités le 2026-11-21 — `37e9621` + `fix fonds --local`)
 
 - `pipeline/ingest.py` : `record_failure(attempts=)` (crash DLQ) ; presets fournisseurs
   (`--provider` openrouter/groq/mistral/deepseek/zai/bigmodel) ; sous-commande `probe`
-  (validation déterministe GO/NO-GO, exit 0 si ≥80 %) ; précédence clé provider > ZHIPU_API_KEY.
+  (validation déterministe GO/NO-GO, exit 0 si ≥80 %) ; précédence clé provider > ZHIPU_API_KEY ;
+  **`fonds_from_path` pour les archives `--local`** (étiquetage réel CAPP/CASS/INCA au lieu de
+  `LOCAL` — sans lui, le dump INCA repartait en `LOCAL` ; lignes existantes déjà backfillées en SQL).
 - `pipeline/core.py` : garde dédoublonnage cross-fonds dans `save_decision` ; `duree_mariage_annees`
   /`nombre_enfants` castés en int (les modèles renvoient 39.4 → le schéma API veut int).
 - `backend/app/routers/pipeline.py` : fix timezone naïf/aware sur /state et /benchmark (500 moniteur).
