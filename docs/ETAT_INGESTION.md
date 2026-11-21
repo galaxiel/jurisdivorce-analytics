@@ -67,3 +67,28 @@
 - `pipeline/dila.py` : `INCA` dans `KNOWN_FONDS`.
 - `tests/test_pipeline_core.py` : tests resolve_provider, _validate_extraction, fonds/parse INCA.
 - Base : 40 tests pytest verts ; démo supprimée ; data float castée.
+
+## Mise à jour 2026-11-21 (fin de journée) — scans complets prouvés
+
+**files_read vérifié par re-scan --force (0 token) vs comptage réel des tars** :
+
+| Archive | files_read | Fichiers réels (tar) | Exploitables | Retenues à extraire |
+|---|---|---|---|---|
+| CAPP | **73 050** | 73 050 | 25 999 | **5 279** |
+| CASS | **145 421** | 145 421 | 62 707 | **2 292** |
+| INCA | **387 902** | 387 902 | 22 803 | **4 685** |
+
+→ Les scans ont TOUT lu (l'affirmation « fraction infime » venait des logs tournants purgés à
+5 000 lignes par la tempête d'erreurs de 13 h). max(date_decision)=2017-07-04 = progression de
+l'EXTRACTION (LLM), pas du scan. **Reste à extraire : 12 256 décisions.**
+
+**Commits** : `b8923c8` (source = fonds réel threadé scan→save_decision + migration lignes
+existantes CAPP 1 975 / CASS 313) · `6ee050a` (**reasoning désactivé sur OpenRouter** — banc mesuré :
+0,00144 → 0,00032 $/décision, ×4,5 moins cher, ×5 plus rapide, qualité 5/5 identique).
+
+**Prochaine étape (bloquée sur budget)** : extraction des 12 256 ≈ **3,92 $** avec hy4-flash sans
+thinking sur OpenRouter — la clé « zcode » est plafonnée à 5 $ (4,18 $ dépensés, 0,82 $ restants).
+→ Monter le plafond à ~10 $ sur openrouter.ai (API Keys → Edit), puis lancer :
+`set -a && source backend/.env && set +a && export JURISDIVORCE_PROVIDER=openrouter && python -m pipeline.ingest run --local archives/Freemium_capp… archives/Freemium_inca… archives/Freemium_cass… --force --analyze --keep-archives`
+(app_config attendu : model=tencent/hy4-flash, max_concurrency=8, max_chars=16000).
+Puis purge DLQ : `DELETE FROM failed_decisions WHERE decision_id IN (SELECT id FROM decisions)`.
