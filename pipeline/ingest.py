@@ -242,7 +242,7 @@ async def wait_if_paused(state: PipelineStateWriter) -> bool:
 
 async def analyze_decision(conn, state: PipelineStateWriter, limiter: AdaptiveLimiter,
                            writer: BatchWriter, decision_id: str, text: str, md5: str,
-                           defaults: dict) -> bool:
+                           defaults: dict, fonds: Optional[str] = None) -> bool:
     """Analyse une décision : config à chaud + backoff 429/503 + DLQ sur échec final.
 
     L'écriture ne se fait PAS ici : la décision réussie part dans la BatchWriter
@@ -265,7 +265,7 @@ async def analyze_decision(conn, state: PipelineStateWriter, limiter: AdaptiveLi
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             extracted, tokens = await call_llm(truncated, model)
-            await writer.put(decision_id, md5, truncated, extracted)
+            await writer.put(decision_id, md5, truncated, extracted, fonds)
             state.bump(tokens_today=tokens)
             return True
         except (RateLimitError, APIStatusError) as exc:
@@ -350,10 +350,11 @@ async def run_campaign(args) -> None:
     writer = BatchWriter(conn, state)
     writer_task = asyncio.create_task(writer.run())
 
-    async def bounded(decision_id: str, text: str, md5: str) -> bool:
+    async def bounded(decision_id: str, text: str, md5: str, fonds: Optional[str] = None) -> bool:
         await limiter.acquire()
         try:
-            return await analyze_decision(conn, state, limiter, writer, decision_id, text, md5, defaults)
+            return await analyze_decision(conn, state, limiter, writer, decision_id, text, md5, defaults,
+                                          fonds=fonds)
         finally:
             await limiter.release()
 
@@ -402,7 +403,7 @@ async def run_campaign(args) -> None:
                 state.bump(archives_done=1)
                 continue
 
-            kept: List[Tuple[str, str, str]] = []
+            kept: List[Tuple[str, str, str, str]] = []
             scanned = 0
             raw_saved = 0
             counters = {"files_read": 0}
@@ -423,7 +424,7 @@ async def run_campaign(args) -> None:
                         continue  # élimination des doublons
                     if conn.execute("SELECT 1 FROM decisions WHERE id = ? LIMIT 1", (decision_id,)).fetchone():
                         continue
-                    kept.append((decision_id, text, md5))
+                    kept.append((decision_id, text, md5, archive["fonds"]))
                 conn.commit()
             except Exception as exc:
                 state.mark_archive(archive["url"], archive["fonds"], size, "error",
@@ -437,7 +438,7 @@ async def run_campaign(args) -> None:
                               f"{scanned} décisions exploitables, {len(kept)} retenues par le pré-filtre.")
 
             if args.analyze and not args.dry_run:
-                results = await asyncio.gather(*(bounded(d, t, m) for d, t, m in kept))
+                results = await asyncio.gather(*(bounded(d, t, m, f) for d, t, m, f in kept))
                 done = sum(1 for r in results if r)
             else:
                 done = 0
@@ -492,7 +493,9 @@ async def _drain_standalone(conn, state, limiter, writer, defaults) -> int:
     ok = 0
     for row in rows:
         md5 = hashlib.md5(row["text_truncated"].encode("utf-8")).hexdigest()
-        if await analyze_decision(conn, state, limiter, writer, row["decision_id"], row["text_truncated"], md5, defaults):
+        frow = conn.execute("SELECT fonds FROM raw_fiches WHERE id=? LIMIT 1", (row["decision_id"],)).fetchone()
+        if await analyze_decision(conn, state, limiter, writer, row["decision_id"], row["text_truncated"], md5, defaults,
+                                  fonds=frow["fonds"] if frow else None):
             with conn:
                 conn.execute("DELETE FROM failed_decisions WHERE id = ?", (row["id"],))
             ok += 1

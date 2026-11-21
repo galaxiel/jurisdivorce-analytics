@@ -579,7 +579,8 @@ def _bool(v: Any) -> Optional[bool]:
     return None if v is None else bool(v)
 
 
-def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text: str, ex: dict):
+def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text: str, ex: dict,
+                  fonds: Optional[str] = None):
     """Aplanit le JSON LLM enrichi (v2) en colonnes requêtables + réclamations.
 
     Règles : juridiction/régime normalisés ; montants négatifs/non numériques → NULL ;
@@ -640,7 +641,7 @@ def save_decision(conn: sqlite3.Connection, decision_id: str, md5: str, raw_text
                 raw_text, extracted_json, text_md5
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                decision_id, "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"),
+                decision_id, fonds or "JUDILIBRE_OD", meta.get("numero_pourvoi_rg"),
                 normalize_juridiction(meta.get("juridiction")),
                 meta.get("chambre"), meta.get("date_decision"),
                 normalize_type_procedure(ctx.get("type_procedure")), normalize_regime(ctx.get("regime_matrimonial")),
@@ -901,8 +902,9 @@ class BatchWriter:
         self.queue: asyncio.Queue = asyncio.Queue()
         self._closed = False
 
-    async def put(self, decision_id: str, md5: str, text: str, extracted: dict) -> None:
-        await self.queue.put((decision_id, md5, text, extracted))
+    async def put(self, decision_id: str, md5: str, text: str, extracted: dict,
+                  fonds: Optional[str] = None) -> None:
+        await self.queue.put((decision_id, md5, text, extracted, fonds))
 
     async def run(self) -> None:
         while True:
@@ -915,8 +917,8 @@ class BatchWriter:
                     break
             try:
                 with self.conn:  # une seule transaction pour tout le lot
-                    for decision_id, md5, text, extracted in items:
-                        save_decision(self.conn, decision_id, md5, text, extracted)
+                    for decision_id, md5, text, extracted, fonds in items:
+                        save_decision(self.conn, decision_id, md5, text, extracted, fonds=fonds)
                 self.state.bump(decisions_analyzed=len(items))
             except Exception as exc:
                 self.state.bump(decisions_failed=len(items))
