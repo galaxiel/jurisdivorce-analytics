@@ -135,3 +135,26 @@ Aucun coût cumulé : 0,00 €.
 - Snapshots re-exportés (decisions_index.json 53 Mo, 0 mention démo) ; la ligne `synth_demo_count`
   du footer disparaîtra d'elle-même.
 - Reste optionnel : rebuild BUILD_STATIC + refresh backend/static_site pour le tunnel ; visuel app.
+
+## 📖 COUVERTURE DE CHAQUE DUMP DILA (à lire avant toute analyse de périmètre)
+
+**Ce que contient chaque archive freemium** (mesuré sur les décisions RÉELLEMENT extraites,
+c'est-à-dire retenues par le filtre divorce — pas tout le contenu du tar) :
+
+| Archive (dump 20261108) | Fonds | Type de décisions | Période couverte (extrait) | Fichiers XML | Conservées |
+|---|---|---|---|---|---|
+| `Freemium_capp_global_…` | **CAPP** | **Cours d'appel** (décisions publiées, toutes CA) | **1997-12-05 → 2017-12-22** | 73 050 | 7 237 |
+| `Freemium_cass_global_…` | **CASS** | **Cour de cassation** (toutes chambres, publiées au bulletin) | **1928-04-20 → 2026-06-10** | 145 421 | 2 564 |
+| `Freemium_inca_global_…` | **INCA** | **Cassation INÉDITES** (non publiées, `PUBLI_BULL publie="non"`) | **1970-04-21 → 2019-02-20** | 387 902 | 4 685 |
+
+**Points de couverture à retenir** :
+- Le dump freemium **CAPP s'arrête fin 2017** : les décisions de CA postérieures ne sont dans
+  AUCUN dump freemium → les obtenir nécessiterait l'API PISTE (roadmap).
+- La **CASS couvre tout le passé jusqu'à la date du dump** (juin 2026) : c'est elle qui porte
+  les années récentes — le « trou 2017 » signalé par Hermes était un artefact de progression
+  d'extraction, aujourd'hui résolu.
+- **INCA = inédites de Cassation** : complémentaire de CASS (une inédite peut être republiée
+  dans un dump CASS ultérieur → d'où le dédoublonnage cross-fonds, clé juridiction+RG+date).
+- Chaque nouveau dump DILA remplace l'ancien (même nom de fichier, nouvel horodatage) → une
+  campagne mensuelle `run --download --analyze` capte les nouveautés (idempotent, upsert par id
+  + garde cross-fonds).
