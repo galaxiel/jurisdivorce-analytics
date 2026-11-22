@@ -118,3 +118,20 @@ campagne 0€ (Nous, hy4-flash:free) interrompue à **10 160 / 12 256 extraction
 en DLQ. **Reprise = la même commande --force --analyze** (les décisions déjà extraites sont
 ignorées par les gardes text_md5/id → seules les ~2 100 restantes partent au LLM, ~25-45 min).
 Aucun coût cumulé : 0,00 €.
+
+## ✅ MISSION INCA ACCOMPLIE (2026-11-22, campagne 0 € via Nous terminée)
+
+**Rapport final (chiffres réels)** :
+- **14 486 décisions réelles** (démo supprimée) : CAPP 7 237 · CASS 2 564 · INCA 4 685
+- **Min/max dates PAR fonds** : CAPP 1997-12-05 → 2017-12-22 · CASS **1928-04-20 → 2026-06-10**
+  (le dump freemium CAPP s'arrête fin 2017 — les années récentes sont couvertes par CASS et INCA)
+- **Dédoublonnage** : count(*) == count(distinct clé) == **14 486** ✅ (31 doublons CAPP d'ère
+  pré-garde supprimés, plus ancienne conservée)
+- **files_read vs tars réels** : 73 050/73 050 · 145 421/145 421 · 387 902/387 902 — scans complets
+- **Juridictions INCA** : 4 676 Cour de cassation · 6 CNRADET · 2 Commission nationale · 1 CJR
+- **DLQ** : 17 316 purgées (déjà en base) → **109 restantes** (rate-limité au moment du drain,
+  à re-typer plus tard : `JURISDIVORCE_PROVIDER=nous python -m pipeline.ingest retry-failed`)
+- **Coût total des campagnes : 0,00 €** (hy4-flash:free via la passerelle Nous)
+- Snapshots re-exportés (decisions_index.json 53 Mo, 0 mention démo) ; la ligne `synth_demo_count`
+  du footer disparaîtra d'elle-même.
+- Reste optionnel : rebuild BUILD_STATIC + refresh backend/static_site pour le tunnel ; visuel app.
