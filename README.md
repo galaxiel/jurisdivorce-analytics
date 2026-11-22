@@ -158,8 +158,9 @@ process uvicorn (pas de rechargement à chaud en production) ; le site statique,
 
 ## Avertissement
 
-Outil statistique **indicatif** : il ne constitue pas un avis juridique. Les données livrées
-sont synthétiques (`source = SYNTHETIQUE_DEMO`) ; exécuter la campagne d'ingestion remplace
-ces lignes par de vraies décisions (`source = JUDILIBRE_OD`). Les archives téléchargées vont
-dans `archives/` (jamais dans le code, jamais dans git) et sont supprimées après traitement
-(`--keep-archives` pour les conserver).
+Outil statistique **indicatif** : il ne constitue pas un avis juridique. L'instance de
+référence contient **14 486 décisions réelles** (source par fonds : `CAPP`, `CASS`, `INCA` —
+Cours d'appel 1997-2017, Cassation 1928-2026, inédites 1970-2019). Un **clone frais** démarre
+avec la démo (`source = SYNTHETIQUE_DEMO`) ; exécuter la campagne d'ingestion remplace ces
+lignes par de vraies décisions étiquetées par fonds. Les archives téléchargées vont dans
+`archives/` (jamais dans le code, jamais dans git) et sont conservées avec `--keep-archives`.

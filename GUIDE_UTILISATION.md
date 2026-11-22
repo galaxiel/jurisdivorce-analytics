@@ -61,7 +61,7 @@ de les retirer en un clic avant l'ingestion de vraies décisions.
 
 La page d'accueil présente :
 
-- Un **hero** avec badge chiffré (ex. « 1 135 décisions de 12 juridictions · 2018 → 2024 »),
+- Un **hero** avec badge chiffré (ex. « 14 486 décisions · 1928 → 2026 »),
   deux boutons d'action (Simuler mon cas / Voir les statistiques) et la mention « statistiques
   indicatives — ne constituent pas un avis juridique ».
 - **4 indicateurs nationaux** : nombre de décisions analysées, abattement médian sur

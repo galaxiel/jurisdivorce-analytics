@@ -36,9 +36,14 @@ GLM Flash Zhipu (API openai-compliant) pour l'extraction.
 | **V4 — CI GitHub Actions** | `.github/workflows/ci.yml` : backend (deps → seed → pytest → dry-run pipeline) + frontend (npm ci → build) sur chaque push | run à vérifier sur le push |
 | **V4 — Multi-fonds réels** | **CAPP 2 001 conservées** (26 k parcourues) + **CASS 785 conservées (145 421 fichiers XML lus)** — deux fonds traités en autonomie, manifest `done` ×2 | `/api/pipeline/archives` |
 
-**Données actuelles** : `backend/jurisprudence.db` = 1 135 décisions `SYNTHETIQUE_DEMO`
-(seed v2) + tables pipeline (`pipeline_state`, `pipeline_logs`, `processed_archives` avec
-l'archive CAPP réelle).
+**Données actuelles (2026-11-22)** : `backend/jurisprudence.db` = **14 486 décisions RÉELLES**
+(source scindée par fonds : **CAPP 7 237 · CASS 2 564 · INCA 4 685**) + `raw_fiches` (conservation
+intégrale : CAPP 25 999 · CASS 62 705 · INCA 22 803) + tables pipeline. **Couverture des dumps
+freemium 20261108** : CAPP = CA publiées 1997-12 → 2017-12 · CASS = Cassation publiées
+1928-04 → 2026-06 · INCA = Cassation inédites 1970-04 → 2019-02 (détail dans
+`docs/ETAT_INGESTION.md`). Démo SYNTHETIQUE_DEMO supprimée. Un clone frais n'embarque NI la base
+NI les dumps (gitignorés) : `python -m app.seed` y recrée la démo, puis campagnes
+`run --download --analyze` pour les vraies données.
 
 **Conservation d'une fiche (réponse « garde-t-on tout ?»)** : chaque décision retenue stocke
 `raw_text` (texte intégral de l'arrêt) + `extracted_json` (sortie LLM **complète**, non aplatie) +
@@ -173,3 +178,22 @@ python -m pipeline.ingest run --download --fonds CAPP,CASS --analyze --concurren
 - **Campagne hy4-flash en cours** (OpenRouter, ~2-3 €, décision utilisateur) : ~1 600+ décisions
   réelles analysées ; démo SYNTHETIQUE_DEMO supprimée (base 100 % réelle) ; DLQ ~15 k lignes à
   drainer en fin de campagne. **40 tests verts.**
+
+**Mission 2026-11-22 — INCA ingérée, campagne 0 € accomplie** (13 commits `2676540`→`6efe328`) :
+- **Fonds INCA** (Cassation inédites) ajouté (`KNOWN_FONDS`, test parse/fonds) ; dump 664 Mo ;
+  387 902 fichiers lus ; **4 685 retenues** (4 676 Cour de cassation + CNRADET/CJR).
+- **`source` = fonds réel** (`CAPP`/`CASS`/`INCA`) threadé scan→`save_decision` + migration des
+  lignes existantes ; **dédoublonnage cross-fonds** dans `save_decision` (clé juridiction UPPER +
+  RG normalisé + date, md5 secours) — vérifié : count(*) == count(distinct clé) == **14 486**.
+- **Multi-fournisseurs LLM** : presets `--provider` (zai/openrouter/nous/groq/mistral/deepseek/
+  bigmodel), sous-commande **`probe`** (GO/NO-GO : conformité + couverture de champs), précédence
+  clé `<PROVIDER>_API_KEY`. **Campagnes à 0 €** via la passerelle Nous Research
+  (`tencent/hy4-flash:free`, `reasoning` désactivé — banc : ×4,5 moins cher, ×5 plus rapide,
+  qualité identique ; clé `NOUS_API_KEY` backend/.env, abonnement Nous Portal de l'utilisateur).
+- **Perf critique corrigée** (`6efe328`) : les stats chargeaient des entités ORM complètes
+  (~100 Mo/appel → `/api/stats/overview` = 58,8 s à 14 486 lignes) → `defer()` sur
+  raw_text/extracted_json dans `load_decisions` (stats seulement) + cache TTL 300 s clé incluant
+  l'URL du moteur → **1,34 s (×44)**. À généraliser si d'autres agrégations ralentissent.
+- **DLQ** : 17 316 purgées → **109 restantes rate-limitées** (drain : `JURISDIVORCE_PROVIDER=nous
+  python -m pipeline.ingest retry-failed` quand la fenêtre :free se libère).
+- **41 tests verts, CI verte.** Couverture complète des dumps : voir `docs/ETAT_INGESTION.md`.

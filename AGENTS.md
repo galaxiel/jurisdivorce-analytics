@@ -129,7 +129,8 @@ python -m pipeline.ingest status --db /tmp/test.db
    (`backend/app/database.py`). Jamais de suppression/drop — compat seed v1/ données réelles.
 5. **Ne pas supprimer** `pipeline/ingest_judilibre_brut.py` (script v1 autonome conservé).
 6. **Données de démo** toujours marquées `source='SYNTHETIQUE_DEMO'` ; vraies données =
-   `source='JUDILIBRE_OD'`. Les stats/filtres n'y font pas de différence — ne jamais mélanger
+   `source` = **fonds réel** (`'CAPP'`, `'CASS'`, `'INCA'` — threadé du scan jusqu'à
+   `save_decision`). Les stats/filtres n'y font pas de différence — ne jamais mélanger
    silencieusement les deux dans un calcul.
 7. **Pause/Stop du pipeline** : le process d'ingestion lit `pipeline_state.status` (SQLite,
    cross-process). Toute boucle longue doit passer par `wait_if_paused()` / `control_status()`.
