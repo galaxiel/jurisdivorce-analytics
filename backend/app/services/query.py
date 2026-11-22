@@ -1,12 +1,16 @@
 """Constructeur de requête partagé : filtres croisés pour /decisions, /stats/* et /export."""
 import re
+import time
 from typing import List, Optional
 
 from sqlalchemy import func, or_, text
-from sqlalchemy.orm import Query, Session
+from sqlalchemy.orm import Query, Session, defer
 
 from ..models import Decision, Recompense
 from ..schemas import DecisionFiltersQuery
+
+_DECISIONS_CACHE_TTL = 300  # secondes — les ~9 appels stats du Cockpit partagent une lecture
+_decisions_cache: dict = {}
 
 
 def _fts_search_ids(db: Session, query: str) -> Optional[List[str]]:
@@ -67,7 +71,25 @@ def filtered_query(db: Session, f: DecisionFiltersQuery) -> Query:
 
 
 def load_decisions(db: Session, f: DecisionFiltersQuery) -> List[Decision]:
-    return filtered_query(db, f).all()
+    """Charge les décisions pour les agrégations stats — SANS raw_text/extracted_json
+    (defer) : à 14 486 lignes ces colonnes ~7 Ko représentaient ~100 Mo d'ORM par appel
+    et 58 s sur /api/stats/overview. Cache TTL partagé entre les appels stats (les
+    entités renvoyées ne sont utilisées qu'en lecture)."""
+    key = (str(db.bind.url) if db.bind else None, f.juridiction, f.annee, f.regime,
+           f.type_procedure, f.nature_reclamation, f.issue, f.has_immo,
+           f.montant_min, f.montant_max, f.q)
+    now = time.monotonic()
+    hit = _decisions_cache.get(key)
+    if hit and now - hit[0] < _DECISIONS_CACHE_TTL:
+        return hit[1]
+    rows = filtered_query(db, f).options(
+        defer(Decision.raw_text), defer(Decision.extracted_json)
+    ).all()
+    if len(_decisions_cache) > 16:
+        for k in [k for k, v in _decisions_cache.items() if now - v[0] >= _DECISIONS_CACHE_TTL]:
+            _decisions_cache.pop(k, None)
+    _decisions_cache[key] = (now, rows)
+    return rows
 
 
 def load_recompenses(db: Session, decisions: List[Decision]) -> List[Recompense]:
