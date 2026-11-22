@@ -110,3 +110,11 @@ set -a && source backend/.env && set +a && export JURISDIVORCE_PROVIDER=nous
 python -m pipeline.ingest run --local archives/Freemium_capp… archives/Freemium_inca… archives/Freemium_cass… --force --analyze --keep-archives
 ```
 Probe : `python -m pipeline.ingest probe --provider nous --model "tencent/hy4-flash:free" --n 5`.
+
+**Arrêt propre demandé par l'utilisateur (2026-11-22 ~0h30) — reprise demain** :
+campagne 0€ (Nous, hy4-flash:free) interrompue à **10 160 / 12 256 extractions (83 %)** via
+`control stop` (arrêt propre, process terminé, status='stopped'). Base : **12 459 décisions réelles**
+(CAPP 7 128 ✅ · INCA 4 568 ≈✅ · CASS 763/2 605 — phase CASS interrompue) + 240 échecs de la passe
+en DLQ. **Reprise = la même commande --force --analyze** (les décisions déjà extraites sont
+ignorées par les gardes text_md5/id → seules les ~2 100 restantes partent au LLM, ~25-45 min).
+Aucun coût cumulé : 0,00 €.
